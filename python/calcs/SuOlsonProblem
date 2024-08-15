@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 
+
 """ Description of Su-Olson Radiative Transfer Benchmark Problem
 The Su-Olson problem consists of a one-dimensional, half-space, non-equilibrium Marshak wave.
 The radiative transfer model is a one-group diffusion approximation with a finite radiation source boundary condition, where
@@ -17,9 +18,9 @@ sb = 2.0 * pi ** 5 / (15.0 * h ** 3 * c ** 2)  # keV^-3.cm^-2.s^-1 (flux-like)
 a = 4.0 * sb / c  # keV^-3.cm^-3 (density-like)
 
 # User Inputs
-Nx = 5
+Nx = 4
 Nmu = 2
-Nt = 5
+Nt = 4
 Nxi = 1
 xsize = 20.0
 user_dx = 1.0
@@ -102,10 +103,14 @@ def advance_particles():
     tempnrgdep = np.zeros(ncells)
     endsteptime = time + dt
     nrgdep = np.zeros(ncells)
+    # Optimizations
     top_cell = ncells - 1
+    exp = np.exp
+    log = np.log
 
     for iptcl in range(len(particle_prop)):
         (ttt, icell, xpos, mu, xi, nrg, startnrg) = particle_prop[iptcl][1:8]
+        startnrg = 0.1 * startnrg
 
         while True:
             if mu > 0.0:
@@ -113,12 +118,18 @@ def advance_particles():
             else:
                 dist_b = (xpos - nodepos[icell]) / abs(mu)
             dist_cen = c * (endsteptime - ttt)
-            dist_scatter = -np.log(xi) / sigma_s[icell]
+            dist_scatter = -log(xi) / sigma_s[icell]
 
             dist = min(dist_b, dist_cen, dist_scatter)
 
-            newnrg = nrg * np.exp(-sigma_a[icell] * dist)
+            newnrg = nrg * exp(-sigma_a[icell] * dist)
+            if newnrg <= startnrg:
+                newnrg = 0.0
             tempnrgdep[icell] += (nrg - newnrg)
+            if newnrg == 0.0:
+                # Flag particle for later destruction
+                particle_prop[iptcl][6] = -1.0
+                break
 
             xpos += mu * dist
             ttt += dist * invc
@@ -160,7 +171,7 @@ def population_control():
     global particle_prop
     # The energy in the particles before population control
     nrgprepopctrl = sum(item[6] for item in particle_prop)
-    # print(f'Energy in the particles pre population control = {nrgprepopctrl}')
+    #print(f'Energy in the particles pre population control = {nrgprepopctrl}')
     # Make a copy of the census grid
     census_grid_popctrl = census_grid.copy()
 
@@ -214,7 +225,7 @@ def population_control():
     # print(f'Particle count after population control: {particle_count_after}')
     # energy in the particles post population control
     nrgpostpopctrl = sum(item[6] for item in particle_prop)
-    # print(f'Energy in the particles post population control = {nrgpostpopctrl}')
+    #print(f'Energy in the particles post population control = {nrgpostpopctrl}')
 
 
 def clean_particles():
@@ -306,9 +317,10 @@ for step in range(1, ns+1):
     # update heat capacity
     b = alpha * temp ** 3
 
-    # Apply population control as needed
-    if len(particle_prop) > 1E6:
+    if len(particle_prop) > 1e6:
+    # if step % 1000 == 0 and step != 0 and step!= 10000:
         population_control()
+        print(f'Population control applied. . .')
 
 
 #print(f'Scatter counter = {scatter_counter}')
@@ -318,7 +330,12 @@ plt.plot(cellpos, radtemp, label='Radiation Temperature', color='red')
 plt.xlabel('Position (cm)')
 plt.xlim(nodepos[0], nodepos[-1])
 plt.ylabel('Temperature (keV)')
+plt.ylim(0, 1.2)
 plt.title('Temperature')
 plt.grid(True)
 plt.legend()
+# Note
+note_text = f'Nx = {Nx}\nNmu = {Nmu}\nNt = {Nt}\ndt = {dt}\nns = {ns}\ndx = {dx}'
+plt.text(1.02, 0.5, note_text, transform=plt.gca().transAxes, fontsize=12, verticalalignment='center', bbox=dict(facecolor='white', alpha=0.5))
+
 plt.show()
