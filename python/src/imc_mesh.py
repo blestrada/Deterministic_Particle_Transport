@@ -35,16 +35,15 @@ def make():
     mesh.cellpos = np.arange(0.5 * mesh.dx, mesh.xsize, mesh.dx)
     mesh.nodepos = np.linspace(0.0, mesh.xsize, mesh.ncells + 1)
 
-    # Create empty arrays for the mesh-based physical quantities
+    # Create arrays for the mesh-based physical quantities
 
-    mesh.temp = np.zeros(mesh.ncells) - 1.0  # Temperature (keV)
-    mesh.temp0 = np.zeros(mesh.ncells) - 1.0  # Initial temperature (keV)
-    mesh.sigma_p = np.zeros(mesh.ncells) - 1.0  # Opacity
-    mesh.beta = np.zeros(mesh.ncells) - 1.0  # Beta factor
-    mesh.fleck = np.zeros(mesh.ncells) - 1.0  # Fleck factor
+    mesh.temp = np.ones(mesh.ncells) * mesh.temp0  # Temperature (keV)
+    mesh.radtemp = np.copy(mesh.temp)
+
+    mesh.sigma_a = np.zeros(mesh.ncells) - 1.0  # Opacity
+    mesh.sigma_s = np.zeros(mesh.ncells) - 1.0
     mesh.nrgdep = np.zeros(mesh.ncells) - 1.0  # Total energy deposited in timestep
 
-    mesh.temp0[:] = mat.tmp0
 
 
 def echo():

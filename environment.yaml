@@ -1,0 +1,16 @@
+name: imc
+channels:
+  - nodefaults
+  - conda-forge
+dependencies:
+  - python=3
+  - matplotlib
+  - numpy
+  - jupyter
+  - pip
+  - gfortran
+  - doxygen
+  - graphviz
+  - ghp-import
+  - pip:
+      - git+https://github.com/Feneric/doxypypy

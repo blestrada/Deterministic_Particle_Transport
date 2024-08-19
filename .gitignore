@@ -1,0 +1,13 @@
+*.pyc
+*.dat
+*.pdf
+*.o
+*.mod
+*.exe
+*.out
+*.DS_Store
+.ipynb_checkpoints
+docs/html
+docs/latex
+docs/doxygen.log
+.venv

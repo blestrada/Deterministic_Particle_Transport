@@ -2,7 +2,6 @@
 
 import argparse
 import logging
-import random
 import time as pytime
 
 import imc_global_part_data as part
@@ -27,12 +26,12 @@ def setup_logger():
 def parse_args():
     """Parse command-line arguments and options."""
     parser = argparse.ArgumentParser(
-        description="Python implementation of Fleck and Cummings (1971) implicit Monte Carlo code."
+        description="Python implementation of Monte Carlo with no random numbers."
     )
 
     parser.add_argument("-i", "--input", default="fcimc.in", help="Name of input file")
     parser.add_argument(
-        "-o", "--output", default="fcimc.out", help="Name of output file"
+        "-o", "--output", default="imc.out", help="Name of output file"
     )
     parser.add_argument("-d", "--debug", default=False, help="Debug mode")
 
@@ -53,17 +52,13 @@ def main(input_file, output_file, debug_mode):
 
     logger = setup_logger()
 
-    rng_seed = 12345
-    # logger.info("Initialising RNG with seed %d", rng_seed)
-    random.seed(rng_seed)
-
-    part.n_max = 20000
+    part.n_max = 100000
 
     imc_user_input.read(input_file)
     imc_user_input.echo()
 
     imc_mesh.make()
-    # imc_mesh.echo()
+    imc_mesh.echo()
 
     imc_opcon.run(output_file)
 

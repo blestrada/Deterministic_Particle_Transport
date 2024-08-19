@@ -1,0 +1,15 @@
+name        SuOlson
+dt          1e-13
+xsize       20.0
+dx          0.2
+cycles      10
+Nx          2
+Nmu         2
+Nt          2
+Nxi         1
+sigma_a     0.999
+sigma_s     0.001
+left_bc     reflecting
+right_bc    vacuum
+temp0       0.01
+n_max       100000

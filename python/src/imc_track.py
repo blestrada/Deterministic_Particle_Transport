@@ -27,8 +27,8 @@ def run():
     phys_c = phys.c
     top_cell = mesh.ncells - 1
     phys_invc = phys.invc
-    mat_sigma_a = mat.sigma_a
-    mat_sigma_s = mat.sigma_s
+    mesh_sigma_a = mesh.sigma_a
+    mesh_sigma_s = mesh.sigma_s
     mesh_rightbc = mesh.right_bc
     mesh_leftbc = mesh.left_bc
 
@@ -49,16 +49,16 @@ def run():
                 dist_b = (xpos - mesh_nodepos[icell]) / abs(mu)
             
             # Distance to scatter
-            dist_scatter = -log(xi) / mat_sigma_s[icell]
+            dist_scatter = -log(xi) / mesh_sigma_s[icell]
 
             # Distance to census
             dist_cen = phys_c * (endsteptime - ttt)
 
             # Actual distance - whichever happens first
-            dist = np.min(dist_b, dist_cen, dist_scatter)
+            dist = min(dist_b, dist_cen, dist_scatter)
 
             # Calculate the new energy and the energy deposited (temp storage)
-            newnrg = nrg * exp(mat_sigma_a[icell] * dist)
+            newnrg = nrg * exp(-mesh_sigma_a[icell] * dist)
             if newnrg <= startnrg:
                 newnrg = 0.0
             
@@ -130,6 +130,7 @@ def run():
     # End loop over particles
                 
     mesh.nrgdep[:] = nrgdep[:]
+    #print(f'Energy deposited in time-step = {nrgdep}')
 
 
 def clean():

@@ -17,7 +17,7 @@ def read(input_file):
     @param input_file Name of input file
     @return None
     """
-    with open(input_file, "r'") as input_file:
+    with open(input_file, "r") as input_file:
         for line in input_file:
 
             #  Ignore blank lines
@@ -30,7 +30,7 @@ def read(input_file):
                 continue
 
             keyw = fields[0].lower()
-            keyv = fields[1]
+            keyv = fields[1].strip()
 
             if keyw == "dt":
                 time.dt = float(keyv)
@@ -52,32 +52,29 @@ def read(input_file):
             elif keyw == "sigma_s":
                 mat.sigma_s = float(keyv)
 
-            elif keyw == "Nx":
+            elif keyw == "nx":
                 part.Nx = int(keyv)
 
-            elif keyw == "Nmu":
+            elif keyw == "nmu":
                 part.Nmu = int(keyv)
 
-            elif keyw == "Nt":
+            elif keyw == "nt":
                 part.Nt = int(keyv)
 
-            elif keyw == "Nxi":
+            elif keyw == "nxi":
                 part.Nxi = int(keyv)
-
-            elif keyw == "b":
-                mat.b = float(keyv)
-
-            elif keyw == "temp":
-                mesh.temp = float(keyv)
-
-            elif keyw == "radtemp":
-                mesh.radtemp = float(keyv)
 
             elif keyw == "left_bc":
                 mesh.left_bc = str(keyv)
                 
             elif keyw == "right_bc":
                 mesh.right_bc = str(keyv)
+
+            elif keyw == "temp0":
+                mesh.temp0 = float(keyv)
+
+            elif keyw == "n_max":
+                part.n_max = int(keyv)
                 
             else:
                 continue
@@ -92,12 +89,18 @@ def echo():
     print()
     print("mesh.ncells  {:5d}".format(mesh.ncells))
     print("mesh.xsize   {:5.1f}".format(mesh.xsize))
+    print(f'mesh.temp0    {mesh.temp0}')
 
-    print("mat.sigma_a      {:5.1f}".format(mat.sigma_a))
-    print("mat.sigma_s      {:5d}".format(mat.sigma_s))
+    print("mat.sigma_a  {:5.3f}".format(mat.sigma_a))
+    print("mat.sigma_s  {:5.3f}".format(mat.sigma_s))
 
-    print("time.dt      {:5.1f}".format(time.dt))
+    print("time.dt      {}".format(time.dt))
     print("time.ns      {:5d}".format(time.ns))
 
-    print("part.n_input {:5d}".format(part.n_input))
     print("part.n_max   {:5d}".format(part.n_max))
+
+    print("part.Nx      {:5d}".format(part.Nx))
+    print("part.Nmu     {:5d}".format(part.Nmu))
+    print("part.Nt      {:5d}".format(part.Nt))
+    print("part.Nxi     {:5d}".format(part.Nxi))
+   

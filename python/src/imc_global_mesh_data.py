@@ -7,11 +7,13 @@ dx = -1.0
 # Cell arrays
 
 cellpos = -1.0
-sigma_p = -1.0
 temp = -1.0
 temp0 = -1.0
-beta = -1.0
+radtemp = -1.0
+radtemp0 = -1.0
 nrgdep = -1.0
+sigma_a = []
+sigma_s = []
 
 # Nodal arrays
 
