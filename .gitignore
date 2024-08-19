@@ -5,7 +5,7 @@
 *.mod
 *.exe
 *.out
-*.DS_Store
+.DS_Store
 .ipynb_checkpoints
 docs/html
 docs/latex
