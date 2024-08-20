@@ -58,15 +58,15 @@ def run(output_file):
         imc_tally.run()
 
         # Update time
-        time.time = time.time + time.dt
+        time.time += time.dt
 
         # Apply population control on particles if needed
         if len(part.particle_prop) > part.n_max:
-            imc_update.population_control
+            imc_update.population_control()
 
         # Plot
         if plottimenext <= 2:
-            if (time.time + 1.0e-06) >= plottimes[plottimenext]:
+            if (time.time) >= plottimes[plottimenext]:
                 print("Plotting {:6d}".format(plottimenext))
                 print("at target time {:24.16f}".format(plottimes[plottimenext]))
                 print("at actual time {:24.16f}".format(time.time))

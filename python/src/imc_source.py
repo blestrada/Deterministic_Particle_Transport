@@ -27,11 +27,18 @@ def create_census_particles():
         origin = icell
 
         # Create particles and add them to the global list
-        for xpos in x_positions:
-            for mu in angles:
-                for xi in xi_values:
-                    part.particle_prop.append([origin, ttt, icell, xpos, mu, xi, nrg, startnrg])
-                    part.census_grid.append([icell, xpos, mu, xi, 0])
+        particles = [[origin, ttt, icell, xpos, mu, xi, nrg, startnrg] 
+             for xpos in x_positions 
+             for mu in angles 
+             for xi in xi_values]
+        part.particle_prop.extend(particles)
+
+        census_grid = [[icell, xpos, mu, xi, 0] 
+               for xpos in x_positions 
+               for mu in angles 
+               for xi in xi_values]
+        part.census_grid.extend(census_grid)
+
 
 def create_body_source_particles():
     """Creates source particles for the mesh"""
@@ -48,11 +55,13 @@ def create_body_source_particles():
         startnrg = nrg
         # Create particles and add them to global list
         origin = icell
-        for xpos in x_positions:
-            for mu in angles:
-                for ttt in emission_times:
-                    for xi in xi_values:
-                        part.particle_prop.append([origin, ttt, icell, xpos, mu, xi, nrg, startnrg])
+        
+        particles = [[origin, ttt, icell, xpos, mu, xi, nrg, startnrg] 
+             for xpos in x_positions 
+             for mu in angles
+             for xi in xi_values
+             for ttt in emission_times]
+        part.particle_prop.extend(particles)
 
 
 def create_surface_source_particles():
@@ -72,7 +81,8 @@ def create_surface_source_particles():
     icell = 0  # starts in leftmost cell
     origin = icell
     # Create particles and add them to global list
-    for mu in angles:
-        for ttt in emission_times:
-            for xi in xi_values:
-                part.particle_prop.append([origin, ttt, icell, xpos, mu, xi, nrg, startnrg])
+    particles = [[origin, ttt, icell, xpos, mu, xi, nrg, startnrg]
+        for mu in angles
+        for ttt in emission_times
+        for xi in xi_values]
+    part.particle_prop.extend(particles)

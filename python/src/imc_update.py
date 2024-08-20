@@ -20,7 +20,7 @@ def run():
 def population_control():
     """Reduces number of particles"""
     # The energy in the particles before population control
-    nrgprepopctrl = sum(item[6] for item in particle_prop)
+    nrgprepopctrl = sum(item[6] for item in part.particle_prop)
     print(f'Energy in the particles pre population control = {nrgprepopctrl}')
     # Make a copy of the census grid
     census_grid_popctrl = part.census_grid.copy()
@@ -49,11 +49,11 @@ def population_control():
         linear_index = icell * part.Nx * part.Nmu * part.Nxi + ix * part.Nmu * part.Nxi + imu * part.Nxi + ixi
         census_grid_popctrl[linear_index][4] += nrg  # Accumulate energy in the nearest census particle
 
-    particle_count_before = len(particle_prop)
-    # print(f'Particle count before population control: {particle_count_before}')
+    particle_count_before = len(part.particle_prop)
+    print(f'Particle count before population control: {particle_count_before}')
 
     # Remove old particles from particle_prop
-    particle_prop = []
+    part.particle_prop = []
 
     # Add new particles from census_grid_popctrl
     for entry in census_grid_popctrl:
@@ -65,14 +65,15 @@ def population_control():
 
         # Insert new parameters into each particle entry
         origin = entry[0]  # icell from census grid
-        ttt = time  # current time in the simulation
+        ttt = time.time  # current time in the simulation
         startnrg = nrg  # energy from census grid
 
         # Append updated particle entry to particle_prop
-        particle_prop.append([origin, ttt, icell, xpos, mu, xi, nrg, startnrg])
+        part.particle_prop.append([origin, ttt, icell, xpos, mu, xi, nrg, startnrg])
 
-    particle_count_after = len(particle_prop)
+    particle_count_after = len(part.particle_prop)
     print(f'Particle count after population control: {particle_count_after}')
     # energy in the particles post population control
-    nrgpostpopctrl = sum(item[6] for item in particle_prop)
+    nrgpostpopctrl = sum(item[6] for item in part.particle_prop)
     print(f'Energy in the particles post population control = {nrgpostpopctrl}')
+    print(f'Population control applied...')

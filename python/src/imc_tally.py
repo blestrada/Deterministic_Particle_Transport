@@ -20,10 +20,10 @@ def run():
 
     # Temperature increase
     nrg_emitted = phys.c * mesh.sigma_a * phys.a *  mesh.temp ** 4 * time.dt * mesh.dx  
-    print(f' nrg emitted = {nrg_emitted}')
+    #print(f' nrg emitted = {nrg_emitted}')
     nrg_inc = np.zeros(mesh.ncells)
     nrg_inc[:] = mesh.nrgdep[:] - nrg_emitted[:]
-    print(f' nrginc = {nrg_inc}')
+    #print(f' nrginc = {nrg_inc}')
 
     # Update radiation temperature
     actual_energy_remaining = np.zeros(mesh.ncells)

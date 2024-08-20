@@ -72,31 +72,35 @@ def run():
 
             # Boundary treatment
             if dist == dist_b:
+                
                 # Left boundary
-                if mu < 0:
-                    if icell == 0:
-                        if mesh_leftbc == 'vacuum':
-                            # Flag particle for later destruction
-                            ptcl.particle_prop[iptcl][6] = -1.0
-                            break
-                        if mesh_leftbc == 'reflecting':
-                            mu *= -1.0
-                    # Otherwise, move particle 1 cell to the left
-                    else:
-                        icell -= 1
-
+                if mu < 0 and icell == 0:
+                    
+                    if mesh_leftbc == 'vacuum':
+                        
+                        # Flag particle for later destruction
+                        ptcl.particle_prop[iptcl][6] = -1.0
+                        break
+                    elif mesh_leftbc == 'reflecting':
+                        
+                        mu *= -1.0  # Reverse direction
+                        
                 # Right boundary
-                if mu > 0:
-                    if icell == top_cell: 
-                        if mesh_rightbc == 'vacuum':
-                            # Flag particle for later destruction
-                            ptcl.particle_prop[iptcl][6] = -1.0
-                            break
-                        if mesh_rightbc == 'reflecting':
-                            mu *= -1.0
-                    # Otherwise, move particle 1 cell to the right
-                    else:
-                        icell += 1
+                elif mu > 0 and icell == top_cell:
+                    if mesh_rightbc == 'vacuum':
+                        ptcl.particle_prop[iptcl][6] = -1.0
+                        break
+                    elif mesh_rightbc == 'reflecting':
+                        mu *= -1.0  # Reverse direction
+                        
+                
+                # Move particle to the left
+                elif mu < 0 and icell != 0:
+                    icell -= 1
+                
+                # Move particle to the right
+                elif mu > 0 and icell != top_cell:
+                    icell += 1
             
             # Advance position, time, and energy
             xpos += mu * dist
