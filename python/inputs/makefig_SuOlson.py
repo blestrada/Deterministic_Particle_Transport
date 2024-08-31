@@ -2,7 +2,7 @@ import pickle
 import matplotlib.pyplot as plt
 
 # Open the output file
-fname = open("SuOlson2.out", "rb")
+fname = open("SuOlson4.out", "rb")
 
 # Create figure and axis
 fig = plt.figure(figsize=(12,6))
@@ -31,7 +31,7 @@ ax.yaxis.set_label_text("T - keV")
 plt.legend(loc=9, numpoints=1, frameon=False)
 
 # Save figure
-plt.savefig("SuOlson.png", bbox_inches="tight", dpi=900)
+plt.savefig("SuOlson4.png", bbox_inches="tight", dpi=900)
 
 # Optionally show the plot
 # plt.show()

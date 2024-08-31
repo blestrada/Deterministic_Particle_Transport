@@ -1,8 +1,8 @@
 name        SuOlson
-dt          1e-13
+dt          0.5e-13
 xsize       20.0
-dx          0.2
-cycles      10000
+dx          0.05
+cycles      20000
 Nx          2
 Nmu         2
 Nt          2
