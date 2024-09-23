@@ -76,6 +76,12 @@ def read(input_file):
             elif keyw == "n_max":
                 part.n_max = int(keyv)
                 
+            elif keyw == 'mode':
+                part.mode = str(keyv)
+
+            elif keyw == 'scattering':
+                part.scattering = str(keyv)
+                
             else:
                 continue
 

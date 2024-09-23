@@ -43,6 +43,7 @@ def make():
     mesh.sigma_a = np.zeros(mesh.ncells) - 1.0  # Opacity
     mesh.sigma_s = np.zeros(mesh.ncells) - 1.0
     mesh.nrgdep = np.zeros(mesh.ncells) - 1.0  # Total energy deposited in timestep
+    mesh.nrgscattered = np.zeros(mesh.ncells) - 1.0
 
 
 

@@ -33,22 +33,33 @@ def run(output_file):
     # Set opacities
     mesh.sigma_a[:] = mat.sigma_a
     mesh.sigma_s[:] = mat.sigma_s
+    mesh.sigma_t[:] = mesh.sigma_a[:] + mesh.sigma_s[:]
     
-    # Loop over timesteps
+    
     
     time.time = 0.0
 
     # Create census particles
+    if part.mode == 'nrn':
+        imc_source.create_census_particles()
 
-    imc_source.create_census_particles()
+    if part.mode == 'rn':
+        imc_source.create_census_particles_random()
+
+    # Loop over timesteps
 
     for time.step in range(0, time.ns):
         # Update temperature dependent quantities
         imc_update.run()
 
         # Source new particles
-        imc_source.create_surface_source_particles()
-        imc_source.create_body_source_particles()
+        if part.mode == 'nrn':
+            imc_source.create_surface_source_particles()
+            imc_source.create_body_source_particles()
+
+        if part.mode == 'rn':
+            imc_source.create_surface_source_particles_random()
+            imc_source.create_body_source_particles_random()
 
         # Track particles through the mesh
         imc_track.run()
@@ -61,8 +72,12 @@ def run(output_file):
         time.time += time.dt
 
         # Apply population control on particles if needed
-        if len(part.particle_prop) > part.n_max:
+        if len(part.particle_prop) > part.n_max and part.mode == 'nrn':
             imc_update.population_control()
+
+        if len(part.particle_prop) > part.n_max and part.mode == 'rn':
+            # insert population control method here.
+            lol = 1
 
         # Plot
         if plottimenext <= 2:

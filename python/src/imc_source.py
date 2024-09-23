@@ -91,6 +91,7 @@ def create_surface_source_particles():
 
 """These functions below use random numbers."""
 
+
 def create_census_particles_random():
 
     rng = np.random.default_rng()
@@ -110,8 +111,11 @@ def create_census_particles_random():
         ttt = time.time
         origin = icell
 
+        # Assign xi variable - not used, but done to keep the same array structure.
+        xi = 0
+
         # Create particles and add them to the global list
-        particles = [[origin, ttt, icell, xpos, mu, nrg, startnrg] 
+        particles = [[origin, ttt, icell, xpos, mu, xi, nrg, startnrg] 
              for xpos in x_positions 
              for mu in angles]
         part.particle_prop.extend(particles)
@@ -130,10 +134,14 @@ def create_body_source_particles_random():
         n_source_ptcls = part.Nx * part.Nmu * part.Nt
         nrg = phys.c * mesh.sigma_a[icell] * phys.a * (mesh.temp[icell] ** 4) * time.dt * mesh.dx / n_source_ptcls
         startnrg = nrg
+
         # Create particles and add them to global list
         origin = icell
+
+        # Assign xi variable - not used, but done to keep the same array structure
+        xi = 0
         
-        particles = [[origin, ttt, icell, xpos, mu, nrg, startnrg] 
+        particles = [[origin, ttt, icell, xpos, mu, xi, nrg, startnrg] 
              for xpos in x_positions 
              for mu in angles
              for ttt in emission_times]
@@ -156,8 +164,12 @@ def create_surface_source_particles_random():
     startnrg = nrg
     icell = 0  # starts in leftmost cell
     origin = icell
+
+    # Assign xi variable - not used, but done to keep the same array structure
+    xi = 0
+
     # Create particles and add them to global list
-    particles = [[origin, ttt, icell, xpos, mu, nrg, startnrg]
+    particles = [[origin, ttt, icell, xpos, mu, xi, nrg, startnrg]
         for mu in angles
         for ttt in emission_times]
     part.particle_prop.extend(particles)
