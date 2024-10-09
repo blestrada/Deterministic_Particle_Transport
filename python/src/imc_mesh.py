@@ -22,8 +22,7 @@ def make():
     Arrays of both the cell-centre and the cell-edge (node) positions are
     created.
 
-    Cell-centred arrays for temperature, initial temperature, opacity, beta
-    factor, Fleck factor, and total energy deposited, are initialised.
+    Cell-centred arrays for temperature, initial temperature, opacity, and total energy deposited, are initialised.
     """
     # Create cell data as a 2D array (with first dimension = 1)
     # to facilitate use of matplotlib.pyplot.pcolor
@@ -38,13 +37,16 @@ def make():
     # Create arrays for the mesh-based physical quantities
 
     mesh.temp = np.ones(mesh.ncells) * mesh.temp0  # Temperature (keV)
-    mesh.radtemp = np.copy(mesh.temp)
+    mesh.radtemp = np.ones(mesh.ncells) * mesh.radtemp0
 
-    mesh.sigma_a = np.zeros(mesh.ncells) - 1.0  # Opacity
-    mesh.sigma_s = np.zeros(mesh.ncells) - 1.0
-    mesh.nrgdep = np.zeros(mesh.ncells) - 1.0  # Total energy deposited in timestep
-    mesh.nrgscattered = np.zeros(mesh.ncells) - 1.0
+    mesh.sigma_a = np.ones(mesh.ncells) * mat.sigma_a  # Opacities
+    mesh.sigma_s = np.ones(mesh.ncells) * mat.sigma_s
+    mesh.sigma_t = mesh.sigma_a + mesh.sigma_s
+    
+    mesh.nrgdep = np.zeros(mesh.ncells)  # Total energy deposited in timestep
+    mesh.nrgscattered = np.zeros(mesh.ncells)
 
+    mesh.fleck = np.zeros(mesh.ncells) -1.0 # Fleck factor
 
 
 def echo():
@@ -55,6 +57,6 @@ def echo():
     @return  None
     """
     print("Mesh:")
-    print(mesh.ncells, mesh.xsize, mesh.dx)
-    print(mesh.cellpos)
-    print(mesh.nodepos)
+    print(f'mesh.ncells = {mesh.ncells}, mesh.xsize = {mesh.xsize}, mesh.dx = {mesh.dx}')
+    print(f'mesh.cellpos = {mesh.cellpos}')
+    print(f'mesh.nodepos = {mesh.nodepos}')

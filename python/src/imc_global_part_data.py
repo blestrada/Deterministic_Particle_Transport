@@ -4,9 +4,11 @@
 Nx = -1
 Nmu = -1
 Nt = -1
-Nxi = -1
 
+# Number of particles added per timestep (RN)
+n_input = -1
 n_max = -1
+n_census = -1
 
 # Global list of particle properties
 particle_prop = []
@@ -18,5 +20,6 @@ census_grid = []
 # Some parameters
 # mode : random numbers or no random numbers (rn or nrn)
 # scattering: using analog scattering or implicit scattering - used only in NRN mode (analog or implicit)
+problem_type = None
 mode = None
 scattering = None

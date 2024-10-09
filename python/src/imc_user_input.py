@@ -7,6 +7,7 @@ import imc_global_mat_data as mat
 import imc_global_part_data as part
 import imc_global_phys_data as phys
 import imc_global_time_data as time
+import imc_global_volsource_data as vol
 
 def read(input_file):
     """
@@ -61,9 +62,6 @@ def read(input_file):
             elif keyw == "nt":
                 part.Nt = int(keyv)
 
-            elif keyw == "nxi":
-                part.Nxi = int(keyv)
-
             elif keyw == "left_bc":
                 mesh.left_bc = str(keyv)
                 
@@ -73,6 +71,9 @@ def read(input_file):
             elif keyw == "temp0":
                 mesh.temp0 = float(keyv)
 
+            elif keyw == "radtemp0":
+                mesh.radtemp0 = float(keyv)
+
             elif keyw == "n_max":
                 part.n_max = int(keyv)
                 
@@ -81,18 +82,37 @@ def read(input_file):
 
             elif keyw == 'scattering':
                 part.scattering = str(keyv)
+
+            elif keyw == 'problem_type':
+                part.problem_type = str(keyv)
+
+            elif keyw == 'x_0':
+                vol.x_0 = float(keyv)
                 
+            elif keyw == 'epsilon':
+                mat.epsilon = float(keyv)
+
+            elif keyw == 'tau_0':
+                vol.tau_0 = float(keyv)
+
+            elif keyw == 'ns':
+                part.n_input = int(keyv)
+
             else:
                 continue
 
 
 def echo():
     """Echoes user input."""
+    
     print("\n" + "=" * 79)
     print("User input")
     print("=" * 79)
 
+    print(f'Problem Type: {part.problem_type}')
+
     print()
+
     print("mesh.ncells  {:5d}".format(mesh.ncells))
     print("mesh.xsize   {:5.1f}".format(mesh.xsize))
     print(f'mesh.temp0    {mesh.temp0}')
@@ -108,5 +128,4 @@ def echo():
     print("part.Nx      {:5d}".format(part.Nx))
     print("part.Nmu     {:5d}".format(part.Nmu))
     print("part.Nt      {:5d}".format(part.Nt))
-    print("part.Nxi     {:5d}".format(part.Nxi))
    

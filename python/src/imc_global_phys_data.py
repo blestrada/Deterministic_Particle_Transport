@@ -4,7 +4,7 @@
 # ------------------
 
 # Speed of light
-c = 3.0e10  # cm.s^-1
+c = 1.0 #3.0e10  # cm.s^-1
 
 # Planck constant
 h = 4.1356675e-18  # KeV.s
@@ -24,4 +24,4 @@ x15pi4 = 15.0 / pi ** 4
 sb = 2.0 * pi ** 5 / (15.0 * h ** 3 * c ** 2)  # keV^-3.cm^-2.s^-1 (flux-like)
 
 # Radiation constant
-a = 4.0 * sb / c  # keV^-3.cm^-3      (density-like)
+a = 1.0 #4.0 * sb / c  # keV^-3.cm^-3      (density-like)

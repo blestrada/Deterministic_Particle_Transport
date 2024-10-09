@@ -9,13 +9,10 @@ import imc_global_part_data as part
 
 def run():
     """Update temperature-dependent quantities at start of time-step"""
-    
-    print("\n" + "-" * 79)
-    print("Update step ({:4d})".format(time.step))
-    print("-" * 79)
 
     # Calculate new heat capacity
-    mat.b = 4 * phys.a * mesh.temp ** 3
+    mat.b = mat.alpha * mesh.temp ** 3
+    print(f'heat capacity = {mat.b[:10]}')
 
 def population_control():
     """Reduces number of particles"""
@@ -27,10 +24,10 @@ def population_control():
 
     # Reset the nrg term to zero for all energy entries in census_grid_popctrl
     for entry in census_grid_popctrl:
-        entry[4] = 0
+        entry[3] = 0
 
     for particle in part.particle_prop:
-        icell, xpos, mu, xi, nrg = particle[2], particle[3], particle[4], particle[5], particle[6]
+        icell, xpos, mu, nrg = particle[2], particle[3], particle[4], particle[5], 
 
         # Calculate ix and imu for the particle
         position_fraction = (xpos - mesh.nodepos[icell]) / mesh.dx
@@ -41,13 +38,9 @@ def population_control():
         imu = int(angle_fraction * part.Nmu)
         imu = min(max(imu, 0), part.Nmu - 1)
 
-        xi_fraction = xi / 1
-        ixi = int(xi_fraction * part.Nxi)
-        ixi = min(max(ixi, 0), part.Nxi - 1)
-
         # Calculate the linear index for census_grid
-        linear_index = icell * part.Nx * part.Nmu * part.Nxi + ix * part.Nmu * part.Nxi + imu * part.Nxi + ixi
-        census_grid_popctrl[linear_index][4] += nrg  # Accumulate energy in the nearest census particle
+        linear_index = icell * part.Nx * part.Nmu + ix * part.Nmu + imu 
+        census_grid_popctrl[linear_index][3] += nrg  # Accumulate energy in the nearest census particle
 
     particle_count_before = len(part.particle_prop)
     print(f'Particle count before population control: {particle_count_before}')
@@ -60,8 +53,7 @@ def population_control():
         icell = entry[0]
         xpos = entry[1]
         mu = entry[2]
-        xi = entry[3]
-        nrg = entry[4]
+        nrg = entry[3]
 
         # Insert new parameters into each particle entry
         origin = entry[0]  # icell from census grid
@@ -69,7 +61,7 @@ def population_control():
         startnrg = nrg  # energy from census grid
 
         # Append updated particle entry to particle_prop
-        part.particle_prop.append([origin, ttt, icell, xpos, mu, xi, nrg, startnrg])
+        part.particle_prop.append([origin, ttt, icell, xpos, mu, nrg, startnrg])
 
     particle_count_after = len(part.particle_prop)
     print(f'Particle count after population control: {particle_count_after}')
