@@ -91,8 +91,8 @@ def SuOlson1996(output_file):
                 
                 fname.write("Time = {:24.16f}\n".format(time.time).encode())
                 pickle.dump(mesh.cellpos, fname, 0)
-                pickle.dump(mesh.temp, fname, 0)
-                pickle.dump(mesh.radtemp, fname, 0)
+                # pickle.dump(mesh.temp, fname, 0)
+                # pickle.dump(mesh.radtemp, fname, 0)
                 pickle.dump(mesh.matnrgdens, fname, 0)
                 pickle.dump(mesh.radnrgdens, fname, 0)
                 plottimenext = plottimenext + 1
@@ -118,9 +118,10 @@ def SuOlson1997(output_file):
     print(f' rad temp = {mesh.radtemp[:10]}')
 
     mat.alpha = 4 * phys.a / mat.epsilon
+    print(f'mat.alpha = {mat.alpha}')
 
     # Set fleck factor
-    mesh.fleck[:] = 1.0 # 1.0 / (1.0 + mesh.sigma_a[:] * phys.c * time.dt)
+    mesh.fleck[:] = 1.0 / (1.0 + mesh.sigma_a[:] * phys.c * time.dt)
     
     # Begin time
     time.time = 0.0
@@ -129,6 +130,12 @@ def SuOlson1997(output_file):
     mesh.radnrgdens = np.zeros(mesh.ncells)
     mesh.matnrgdens = np.zeros(mesh.ncells)
 
+    # Create census grid
+    imc_source.create_census_grid()
+
+    # Total opacity
+    mesh.sigma_t = mesh.fleck * mesh.sigma_a + (1 - mesh.fleck) * mesh.sigma_a + mesh.sigma_s
+    print(f'mesh.sigma_t = {mesh.sigma_t}')
     # Loop over timesteps
 
     for time.step in range(1, time.ns + 1):
@@ -148,7 +155,10 @@ def SuOlson1997(output_file):
             imc_source.volume_sourcing_random()
             
         # Track particles through the mesh
-        imc_track.run()
+        if part.mode == 'rn':
+            imc_track.run_random()
+        if part.mode == 'nrn':
+            imc_track.run()
         imc_track.clean()
 
         # Check for particles with energies less than zero
@@ -209,6 +219,9 @@ def EnergyCheck(output_file):
     
     time.time = 0.0
 
+    # Create census particles
+    if part.mode == 'nrn':
+        imc_source.create_census_particles()
 
     # Loop over timesteps
 

@@ -46,13 +46,8 @@ mat_benchtwo = [[0.00242, 0.00242, 0.00242, 0.00242, 0.00235, 0.00121, 0.00003, 
 # Create figure and axis for combined plot
 plt.figure(figsize=(8, 5))
 
-# Analytical results (dashed lines)
-# plt.plot(x_values, radiation_at_100, 'r--', label=r'Radiation at $\tau$ = 100 (Analytical)')
-# plt.plot(x_values, material_at_100, 'b--', label=r'Material at $\tau$ = 100 (Analytical)')
-
-
 # Open the output file
-fname = open("SuOlson1997-RN-run1.out", "rb")
+fname = open("SuOlson1997-run1.out", "rb")
 
 # Times corresponding to data in the output file
 times = [r"$\tau$ = 0.1", r"$\tau$ = 1.0", r"$\tau$ = 10"]
@@ -70,34 +65,33 @@ for i in range(3):
     radnrgdens = pickle.load(fname) # radiation energy density
 
     # Plot the file data (solid lines)
-    plt.plot(xdata, matnrgdens, color=colors[i], marker='o', label=f"Material at {times[i]}", linewidth=2, alpha=.5)
-    # plt.plot(xdata, radnrgdens, color=colors[i], marker='o', label=f"Radiation at {times[i]}", linewidth=2, alpha=.5)
+    # plt.plot(xdata, matnrgdens, color=colors[i], marker='o', label=f"Material at {times[i]}", linewidth=2, alpha=.5)
+    plt.plot(xdata, radnrgdens, color=colors[i], marker='o', label=f"Radiation at {times[i]}", linewidth=2, alpha=.5)
 
 
 # Now plot benchmark data 
-# plt.plot(x_bench, rad_benchone[0], 'rx--', label=r'Radiation at $\tau$ = 0.1 (Benchmark)', linewidth=2)  
-# plt.plot(x_bench, rad_benchone[2], 'bx--', label=r'Radiation at $\tau$ = 1.0 (Benchmark)', linewidth=2)
-# plt.plot(x_bench, rad_benchone[4], 'gx--', label=r'Radiation at $\tau$ = 10 (Benchmark)', linewidth=2)
+plt.plot(x_bench, rad_benchone[0], 'rx--', label=r'Radiation at $\tau$ = 0.1 (Benchmark)', linewidth=2)  
+plt.plot(x_bench, rad_benchone[2], 'bx--', label=r'Radiation at $\tau$ = 1.0 (Benchmark)', linewidth=2)
+plt.plot(x_bench, rad_benchone[4], 'gx--', label=r'Radiation at $\tau$ = 10 (Benchmark)', linewidth=2)
 
-plt.plot(x_bench, mat_benchone[0], 'rx-', label=r'Material at $\tau$ = 0.1 (Benchmark)', linewidth=2)  
-plt.plot(x_bench, mat_benchone[2], 'bx-.', label=r'Material at $\tau$ = 1.0 (Benchmark)', linewidth=2)  
-plt.plot(x_bench, mat_benchone[4], 'gx-.', label=r'Material at $\tau$ = 10 (Benchmark)', linewidth=2)  
-# Set axis labels and limits
-plt.xscale('log')
-plt.yscale('log')
-plt.ylim(1e-8, 2.5)
-plt.xlim(0.1, 4.0)
+# plt.plot(x_bench, mat_benchone[0], 'rx-', label=r'Material at $\tau$ = 0.1 (Benchmark)', linewidth=2)  
+# plt.plot(x_bench, mat_benchone[2], 'bx-.', label=r'Material at $\tau$ = 1.0 (Benchmark)', linewidth=2)  
+# plt.plot(x_bench, mat_benchone[4], 'gx-.', label=r'Material at $\tau$ = 10 (Benchmark)', linewidth=2)  
+# plt.xscale('log')
+# plt.yscale('log')
+# plt.ylim(1e-8, 2.5)
+plt.xlim(0.0, 4.0)
 plt.xlabel("x - cm")
 plt.ylabel("Energy Density")
 
 # Add legend
-plt.legend(loc='lower left', numpoints=1, frameon=False)
-# plt.legend(loc='upper right', numpoints=1, frameon=False)
+# plt.legend(loc='lower left', numpoints=1, frameon=False)
+plt.legend(loc='upper right', numpoints=1, frameon=False)
 
 
 # Save figure
-plt.savefig("SuOlson1997-RN-run1-mat.png", bbox_inches="tight", dpi=900)
-# plt.savefig("SuOlson1997-RN-run1-rad-png", bbox_inches="tight", dpi=900)
+# plt.savefig("SuOlson1997-run1-mat.png", bbox_inches="tight", dpi=900)
+plt.savefig("SuOlson1997-run1-png", bbox_inches="tight", dpi=900)
 
 # Optionally show the plot
 plt.show()

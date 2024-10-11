@@ -17,7 +17,7 @@ def run():
 def population_control():
     """Reduces number of particles"""
     # The energy in the particles before population control
-    nrgprepopctrl = sum(item[6] for item in part.particle_prop)
+    nrgprepopctrl = sum(item[5] for item in part.particle_prop)
     print(f'Energy in the particles pre population control = {nrgprepopctrl}')
     # Make a copy of the census grid
     census_grid_popctrl = part.census_grid.copy()
@@ -66,6 +66,6 @@ def population_control():
     particle_count_after = len(part.particle_prop)
     print(f'Particle count after population control: {particle_count_after}')
     # energy in the particles post population control
-    nrgpostpopctrl = sum(item[6] for item in part.particle_prop)
+    nrgpostpopctrl = sum(item[5] for item in part.particle_prop)
     print(f'Energy in the particles post population control = {nrgpostpopctrl}')
     print(f'Population control applied...')

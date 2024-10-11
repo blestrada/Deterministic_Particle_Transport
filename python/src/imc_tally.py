@@ -7,43 +7,49 @@ import imc_global_mesh_data as mesh
 import imc_global_phys_data as phys
 import imc_global_time_data as time
 import imc_global_part_data as part
+import imc_global_volsource_data as vol
 
 
 
 def run():
-    """Tally end-of-timestep quantities."""
+    """Tally end of timestep quantities """
+    source_cells = int((np.ceil(vol.x_0 / mesh.dx)))
+    # Radiation energy density
+    radenergydens = np.zeros(mesh.ncells)
+    radenergydens[:] = phys.a * mesh.temp[:] ** 4 # keV/cm^3
 
-    # Calculate the energy emitted by the body during the time-step
-    nrg_emitted = mesh.sigma_a * mesh.fleck * phys.c * mesh.dx * time.dt * mesh.temp ** 4
-    print(f' nrg emitted = {nrg_emitted[:10]}')
+    # input_energy = sum(radenergydens)
+    # print("The input energy before is: ", input_energy, "\n")
 
-    # Calculate the energy increase in the matter
-    nrg_inc = mesh.nrgdep / mesh.dx - mesh.fleck * mesh.sigma_a * mesh.radnrgdens * phys.c * time.dt
-    print(f' nrg_inc = {nrg_inc[:10]}')
-
-    # Calculate the material energy density
-    mesh.matnrgdens = mesh.matnrgdens + nrg_inc
-
-    # Make sure no matnrgdens value is less than 0.
-    for j in range(len(mesh.matnrgdens)):
-        if mesh.matnrgdens[j] < 0:
-            mesh.matnrgdens[j] = 0.0
+    sourceenergy = np.zeros(mesh.ncells)
+    sourceenergy[0:source_cells] = 1.0
     
-    # Update Material temperature
-    mesh.temp = mesh.matnrgdens ** (1/4)
+    # Temperature increase
+    nrg_inc = np.zeros(mesh.ncells)
+    nrg_inc[:] = (mesh.nrgdep[:] / mesh.dx) - (mesh.sigma_a[:] * mesh.fleck[:] * radenergydens[:] * phys.c * time.dt) 
+  
+    mesh.matnrgdens[:] = mesh.matnrgdens[:] + nrg_inc[:]
 
-    # Calculate the radiation energy density
+    for i in range(mesh.ncells):
+        if mesh.matnrgdens[i] < 0:
+            mesh.matnrgdens[i] = 0
+        
+    #mesh_temp[:] = mesh_temp[:] .+  nrg_inc[:] ./ (bee[:])
+
+    mesh.temp[:] = mesh.matnrgdens[:] ** (1/4)
+
+    #mesh_temp[:] = mesh_temp[:] .+ (material_energy[:])
+
+
+    #print("Mesh temperature: \n")
+    #print(mesh_temp, "\n")
+
+
+    # Save radiation energy
     mesh.radnrgdens = np.zeros(mesh.ncells)
     for particle in part.particle_prop:
         cell_index = particle[2]
         mesh.radnrgdens[cell_index] += particle[5] / mesh.dx
-    
-    # Update Radiation Temperature
-    mesh.radtemp = mesh.radnrgdens ** (1/4)
 
-    print(f'mesh.matnrgdens = {mesh.matnrgdens[:10]}')
-    print(f'mesh.radnrgdens = {mesh.radnrgdens[:10]}')
-
-    print(f"Material temperature: {mesh.temp[:10]}")
-    print(f"Radiation temperature: {mesh.radtemp[:10]}")
-
+    print(f'Material Energy Density = {mesh.matnrgdens[:10]}')
+    print(f'Radiation Energy Density = {mesh.radnrgdens[:10]}')

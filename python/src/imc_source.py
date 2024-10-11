@@ -10,6 +10,18 @@ import imc_global_time_data as time
 import imc_global_volsource_data as vol
 
 
+def create_census_grid():
+    for icell in range(mesh.ncells):
+        # Create position, angle, and scattering arrays
+        x_positions = mesh.nodepos[icell] + (np.arange(part.Nx) + 0.5) * mesh.dx / part.Nx
+        angles = -1 + (np.arange(part.Nmu) + 0.5) * 2 / part.Nmu
+
+        census_grid = [[icell, xpos, mu, 0] 
+               for xpos in x_positions 
+               for mu in angles]
+        part.census_grid.extend(census_grid)
+
+
 def create_census_particles():
     """Creates census particles for the first time-step"""
     for icell in range(mesh.ncells):
@@ -40,6 +52,7 @@ def create_census_particles():
 
 def create_body_source_particles():
     """Creates source particles for the mesh"""
+    e_total_body = 0.0
     for icell in range(mesh.ncells):
         # Create position, angle, and time arrays
         x_positions = mesh.nodepos[icell] + (np.arange(part.Nx) + 0.5) * mesh.dx / part.Nx
@@ -49,6 +62,7 @@ def create_body_source_particles():
         # Assign energy-weights
         n_source_ptcls = part.Nx * part.Nmu * part.Nt
         nrg = phys.c * mesh.fleck[icell] * mesh.sigma_a[icell] * phys.a * (mesh.temp[icell] ** 4) * time.dt * mesh.dx / n_source_ptcls
+        e_total_body += phys.c * mesh.fleck[icell] * mesh.sigma_a[icell] * phys.a * (mesh.temp[icell] ** 4) * time.dt * mesh.dx
         startnrg = nrg
         # Create particles and add them to global list
         origin = icell
@@ -57,6 +71,8 @@ def create_body_source_particles():
             for mu in angles:
                 for ttt in emission_times:
                     part.particle_prop.append([origin, ttt, icell, xpos, mu, nrg, startnrg])
+
+    print(f'e_total_body = {e_total_body}')
 
 
 def create_surface_source_particles():
@@ -95,6 +111,8 @@ def create_volume_source_particles():
 
     # Formula for radiation source
     e_source = source[:] * time.dt * mesh.dx
+    e_total_vol = np.sum(e_source)
+    print(f'e_total_vol = {e_total_vol}')
 
     # Make particles from volume source
     for icell in range(source_cells): # For each cell that has volume source energy
