@@ -44,11 +44,6 @@ def create_census_particles():
              for mu in angles]
         part.particle_prop.extend(particles)
 
-        census_grid = [[icell, xpos, mu, 0] 
-               for xpos in x_positions 
-               for mu in angles]
-        part.census_grid.extend(census_grid)
-
 
 def create_body_source_particles():
     """Creates source particles for the mesh"""
@@ -75,10 +70,92 @@ def create_body_source_particles():
     print(f'e_total_body = {e_total_body}')
 
 
+def create_body_source_particles_2():
+
+    nx_max = part.Nx
+    nmu_max = part.Nmu
+    nt_max = part.Nt
+
+    nx_min = 1
+    nmu_min = 2
+    nt_min = 1
+
+
+    max_particles_per_cell = nx_max * nmu_max * nt_max
+    print(f' max particles per cell = {max_particles_per_cell}')
+
+    # Calculate the energy per cell
+
+    e_cell = mesh.sigma_a * mesh.fleck * phys.c * mesh.dx * time.dt * phys.a * (mesh.temp ** 4)
+
+    e_total = np.sum(e_cell)
+
+    probability = e_cell[:] / e_total
+
+    # Calculate the number of particles per cell based on energy proportion
+    n_particles_per_cell = np.round(probability * max_particles_per_cell).astype(np.uint64)
+
+    # Ensure at least 2 particles are assigned to each cell
+    n_particles_per_cell = np.maximum(n_particles_per_cell, 2)
+
+    # Function to find the nearest even integer for Nmu
+    def nearest_even(value):
+        return int(2 * np.round(value / 2))
+
+    # Initialize arrays to store Nx, Nmu, Nt values per cell
+    Nx_per_cell = np.zeros_like(n_particles_per_cell, dtype=np.uint64)
+    Nmu_per_cell = np.zeros_like(n_particles_per_cell, dtype=np.uint64)
+    Nt_per_cell = np.zeros_like(n_particles_per_cell, dtype=np.uint64)
+
+    # Assign Nx, Nmu, Nt for each cell based on the cube root of the number of particles
+    for i in range(len(n_particles_per_cell)):
+        # Take the cube root of the number of particles
+        cube_root = np.cbrt(n_particles_per_cell[i])
+
+        # Find the nearest even integer for Nmu
+        Nmu = nearest_even(cube_root)
+
+        # Set Nx = Nt = Nmu
+        Nx = Nmu
+        Nt = Nmu
+
+        # Store the values in the corresponding arrays
+        Nx_per_cell[i] = Nx
+        Nmu_per_cell[i] = Nmu
+        Nt_per_cell[i] = Nt
+
+    # Print the resulting Nx, Nmu, Nt for each cell
+    print(f'N_particles_per_cell = {n_particles_per_cell}')
+    print(f'Nx_per_cell = {Nx_per_cell}')
+    print(f'Nmu_per_cell = {Nmu_per_cell}')
+    print(f'Nt_per_cell = {Nt_per_cell}')
+    e_total_body = 0.0
+    # Create source particles
+    for icell in range(mesh.ncells):
+        # Create position, angle, and time arrays
+        x_positions = mesh.nodepos[icell] + (np.arange(Nx_per_cell[icell]) + 0.5) * mesh.dx / Nx_per_cell[icell]
+        angles = -1.0 + (np.arange(Nmu_per_cell[icell]) + 0.5) * 2 / Nmu_per_cell[icell]
+        emission_times = time.time + (np.arange(Nt_per_cell[icell]) + 0.5) * time.dt / Nt_per_cell[icell]
+
+        # Assign energy-weights
+        n_source_ptcls = Nx_per_cell[icell] * Nmu_per_cell[icell] * Nt_per_cell[icell]
+        nrg = phys.c * mesh.fleck[icell] * mesh.sigma_a[icell] * phys.a * (mesh.temp[icell] ** 4) * time.dt * mesh.dx / n_source_ptcls
+        e_total_body += phys.c * mesh.fleck[icell] * mesh.sigma_a[icell] * phys.a * (mesh.temp[icell] ** 4) * time.dt * mesh.dx
+        startnrg = nrg
+        # Create particles and add them to global list
+        origin = icell
+        
+        for xpos in x_positions:
+            for mu in angles:
+                for ttt in emission_times:
+                    part.particle_prop.append([origin, ttt, icell, xpos, mu, nrg, startnrg])
+    
+    print(f'e_total_body = {e_total_body}')
+
+
 def create_surface_source_particles():
     """Creates source particles for the boundary condition."""
     e_surf = phys.sb * bcon.T0 ** 4 * time.dt  # transport 
-    e_surf2 = phys.a * phys.c / 3 * bcon.T0 ** 4 * time.dt # diffusion
 
     # Create source particles for the surface
     xpos = 1e-9
@@ -87,7 +164,7 @@ def create_surface_source_particles():
 
     # Create energy-weights
     n_source_ptcls = len(angles) * len(emission_times)
-    nrg = e_surf2 / n_source_ptcls
+    nrg = e_surf / n_source_ptcls
     startnrg = nrg
     icell = 0  # starts in leftmost cell
     origin = icell
@@ -132,8 +209,6 @@ def create_volume_source_particles():
             for mu in angles:
                 for ttt in emission_times:
                     part.particle_prop.append([origin, ttt, icell, xpos, mu, nrg, startnrg])
-
-
 
 
 

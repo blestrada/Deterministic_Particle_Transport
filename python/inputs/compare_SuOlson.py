@@ -76,10 +76,10 @@ for i in range(3):
     radnrgdens2 = pickle.load(fname2)
 
     # Plot the file data (solid lines)
-    # plt.plot(xdata1, matnrgdens1, color=colors[i], marker='o', label=f"[RN] Material at {times[i]}", linewidth=2, alpha=.5)
-    # plt.plot(xdata2, matnrgdens2, color=colors[i], marker='x', label=f"[NRN] Material at {times[i]}", linewidth=2, alpha=.5)
-    plt.plot(xdata1, radnrgdens1, color=colors[i], marker='o', label=f"[RN] Radiation at {times[i]}", linewidth=2, alpha=.5)
-    plt.plot(xdata2, radnrgdens2, color=colors[i], marker='x', label=f"[NRN] Radiation at {times[i]}", linewidth=2, alpha=.5)
+    plt.plot(xdata1, matnrgdens1, color=colors[i], marker='o', label=f"[RN] Material at {times[i]}", linewidth=2, alpha=.5)
+    plt.plot(xdata2, matnrgdens2, color=colors[i], marker='x', label=f"[NRN] Material at {times[i]}", linewidth=2, alpha=.5)
+    # plt.plot(xdata1, radnrgdens1, color=colors[i], marker='o', label=f"[RN] Radiation at {times[i]}", linewidth=2, alpha=.5)
+    # plt.plot(xdata2, radnrgdens2, color=colors[i], marker='x', label=f"[NRN] Radiation at {times[i]}", linewidth=2, alpha=.5)
 
 
 # Now plot benchmark data 
@@ -91,21 +91,21 @@ for i in range(3):
 # plt.plot(x_bench, mat_benchone[2], 'bx-.', label=r'Material at $\tau$ = 1.0 (Benchmark)', linewidth=2)  
 # plt.plot(x_bench, mat_benchone[4], 'gx-.', label=r'Material at $\tau$ = 10 (Benchmark)', linewidth=2)  
 # Set axis labels and limits
-# plt.xscale('log')
-# plt.yscale('log')
-# plt.ylim(1e-8, 2.5)
+plt.xscale('log')
+plt.yscale('log')
+plt.ylim(1e-8, 3.0)
 plt.xlim(0.1, 4.0)
 plt.xlabel("x - cm")
 plt.ylabel("Energy Density")
 
 # Add legend
-# plt.legend(loc='lower left', numpoints=1, frameon=False)
-plt.legend(loc='upper right', numpoints=1, frameon=False)
+plt.legend(loc='lower left', numpoints=1, frameon=False)
+# plt.legend(loc='upper right', numpoints=1, frameon=False)
 
 
 # Save figure
-# plt.savefig("SuOlson1997-comparison-run1-mat.png", bbox_inches="tight", dpi=900)
-plt.savefig("SuOlson1997-comparison-run1-rad.png", bbox_inches="tight", dpi=900)
+plt.savefig("SuOlson1997-comparison-run1-mat.png", bbox_inches="tight", dpi=900)
+# plt.savefig("SuOlson1997-comparison-run1-rad.png", bbox_inches="tight", dpi=900)
 
 # Optionally show the plot
 plt.show()

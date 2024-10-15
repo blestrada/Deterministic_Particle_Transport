@@ -283,8 +283,8 @@ def run():
 def do_implicit_scattering():
     iterations = 0
     # print(f'mesh.nrgscattered before scattering iterations = {mesh.nrgscattered}')
-    
-    while np.all(mesh.nrgscattered > 1E-20):
+    mesh_tolerance = 0.01 * mesh.nrgscattered
+    while np.all(mesh.nrgscattered > mesh_tolerance):
 
         # Make source particles
         for icell in range(mesh.ncells):

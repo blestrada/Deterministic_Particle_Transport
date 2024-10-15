@@ -6,13 +6,33 @@ import imc_global_mesh_data as mesh
 import imc_global_time_data as time
 import imc_global_bcon_data as bcon
 import imc_global_part_data as part
+import numpy as np
 
-def run():
+def SuOlson_update():
     """Update temperature-dependent quantities at start of time-step"""
 
     # Calculate new heat capacity
     mat.b = mat.alpha * mesh.temp ** 3
     print(f'heat capacity = {mat.b[:10]}')
+
+
+def marshak_wave_update():
+    """Update temperature-dependent quantities at start of time-step"""
+    # Calculate new opacity
+    mesh.sigma_a = np.zeros(mesh.ncells)
+    mesh.sigma_a[:] = 1000.0 / mesh.temp[:] ** 3
+    print(f'mesh.sigma_a = {mesh.sigma_a}')
+
+    # Calculate new fleck factor
+    mesh.fleck = np.zeros(mesh.ncells)
+    mesh.fleck[:] = 1.0 / (1.0 + mesh.sigma_a[:] * phys.c * time.dt)
+    print(f'mesh.fleck = {mesh.fleck}')
+
+    # Calculate total opacity
+    mesh.sigma_t = np.zeros(mesh.ncells)
+    mesh.sigma_t[:] = mesh.fleck[:] * mesh.sigma_a[:] + (1.0 - mesh.fleck[:]) * mesh.sigma_a[:]
+    print(f'mesh.sigma_t = {mesh.sigma_t}')
+
 
 def population_control():
     """Reduces number of particles"""

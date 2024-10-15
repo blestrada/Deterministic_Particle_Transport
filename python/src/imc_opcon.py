@@ -100,6 +100,7 @@ def SuOlson1996(output_file):
     # Close file
     fname.close()
 
+
 def SuOlson1997(output_file):
     """
     Control calculation for SuOlson1997 Volume Source problem.
@@ -141,7 +142,7 @@ def SuOlson1997(output_file):
     for time.step in range(1, time.ns + 1):
         print(f'Step: {time.step}')
         # Update temperature dependent quantities
-        imc_update.run()
+        imc_update.SuOlson_update()
 
         # Source new particles
         if part.mode == 'nrn':
@@ -169,7 +170,7 @@ def SuOlson1997(output_file):
                 raise ValueError(f"Particle {iptcl} has negative energy: {nrg}")
 
         # Tally
-        imc_tally.run()
+        imc_tally.SuOlson_tally()
 
         # Update time
         time.time = round(time.time + time.dt, 3)
@@ -197,6 +198,92 @@ def SuOlson1997(output_file):
 
     # Close file
     fname.close()
+
+
+def marshak_wave(output_file):
+    """
+    Control calculation for Marshak Wave problem.
+
+    Timestep loop is within this function
+    """
+    # Set physical constants
+    phys.c = 299.79245800  # cm / sh
+    phys.a = 0.013720239  #  jrk / (cm3-keV4)
+    phys.sb = phys.a * phys.c / 4.0
+    phys.invc = 1.0 / phys.c
+
+    # Set plot times
+    plottimes = np.array([0.5, 1.0, 1.5, 2.0])
+    print(f'plottimes = {plottimes}')
+    plottimenext = 0
+
+    # Open output file
+    fname = open(output_file, "wb")
+
+    print(f' temperature = {mesh.temp[:10]}')
+    print(f' rad temp = {mesh.radtemp[:10]}')
+
+    # Set heat capacity
+    mat.b = np.ones(mesh.ncells) * 0.3  # jrk / g / keV
+    
+    # Begin time
+    time.time = 0.0
+
+    # Create census grid
+    imc_source.create_census_grid()
+
+    # Create census particles
+    imc_source.create_census_particles()
+
+    # Loop over timesteps
+
+    for time.step in range(1, time.ns + 1):
+        print(f'Step: {time.step}')
+
+        # Update temperature dependent quantities
+        imc_update.marshak_wave_update()
+
+        # Source new particles
+        imc_source.create_body_source_particles()
+        imc_source.create_surface_source_particles()
+            
+        # Track particles through the mesh
+        imc_track.run()
+        imc_track.clean()
+
+        # Check for particles with energies less than zero
+        for iptcl in range(len(part.particle_prop)):
+            nrg = part.particle_prop[iptcl][5]
+            if nrg < 0.0:
+                print(f'Particle prop = {part.particle_prop[iptcl]}')
+                raise ValueError(f"Particle {iptcl} has negative energy: {nrg}")
+
+        # Tally
+        imc_tally.marshak_wave_tally()
+
+        # Update time
+        time.time = round(time.time + time.dt, 5)
+        # Apply population control on particles if needed
+        if len(part.particle_prop) > part.n_max:
+            imc_update.population_control()
+
+        # Plot
+        if plottimenext <= 3:
+            print(f'Time = {time.time}')
+            if (time.time) >= plottimes[plottimenext]:
+                print("Plotting {:6d}".format(plottimenext))
+                print("at target time {:24.16f}".format(plottimes[plottimenext]))
+                print("at actual time {:24.16f}".format(time.time))
+                
+                fname.write("Time = {:24.16f}\n".format(time.time).encode())
+                pickle.dump(mesh.cellpos, fname, 0)
+                pickle.dump(mesh.matnrgdens, fname, 0)
+                pickle.dump(mesh.radnrgdens, fname, 0)
+                plottimenext = plottimenext + 1
+
+    # Close file
+    fname.close()
+
 
 def EnergyCheck(output_file):
     """Test for checking energy balance and particle tracking."""

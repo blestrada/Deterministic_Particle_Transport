@@ -11,7 +11,7 @@ import imc_global_volsource_data as vol
 
 
 
-def run():
+def SuOlson_tally():
     """Tally end of timestep quantities """
     source_cells = int((np.ceil(vol.x_0 / mesh.dx)))
     # Radiation energy density
@@ -53,3 +53,19 @@ def run():
 
     print(f'Material Energy Density = {mesh.matnrgdens[:10]}')
     print(f'Radiation Energy Density = {mesh.radnrgdens[:10]}')
+
+
+def marshak_wave_tally():
+    """Tally end of timestep quantities """
+
+    # Radiation energy density
+    radenergydens = np.zeros(mesh.ncells)
+    radenergydens[:] = phys.a * mesh.temp[:] ** 4 # keV/cm^3
+    
+    # Temperature increase
+    nrg_inc = np.zeros(mesh.ncells)
+    nrg_inc[:] = (mesh.nrgdep[:] / mesh.dx) - (mesh.sigma_a[:] * mesh.fleck[:] * radenergydens[:] * phys.c * time.dt) 
+  
+    mesh.temp[:] = mesh.temp[:] +  nrg_inc[:] / (mat.b[:])
+
+    print(f'mesh.temp = {mesh.temp}')

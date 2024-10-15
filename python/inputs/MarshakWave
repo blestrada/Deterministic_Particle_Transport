@@ -1,0 +1,17 @@
+problem_type    marshak_wave
+dt              0.001
+xsize           0.15
+dx              0.0005
+cycles          20
+Nx              1
+Nmu             2
+Nt              1
+sigma_a         1.0
+sigma_s         0.0
+left_bc         reflecting
+right_bc        vacuum
+temp0           0.01
+radtemp0        0.01
+n_max           2000000
+mode            nrn
+scattering      implicit
