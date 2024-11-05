@@ -45,7 +45,7 @@ def make():
     mesh.nrgdep = np.zeros(mesh.ncells)  # Total energy deposited in timestep
     mesh.nrgscattered = np.zeros(mesh.ncells)
 
-    mesh.fleck = np.zeros(mesh.ncells) -1.0 # Fleck factor
+    mesh.fleck = np.zeros(mesh.ncells) - 1.0 # Fleck factor
 
 
 def echo():
@@ -57,5 +57,5 @@ def echo():
     """
     print("Mesh:")
     print(f'mesh.ncells = {mesh.ncells}, mesh.xsize = {mesh.xsize}, mesh.dx = {mesh.dx}')
-    print(f'mesh.cellpos = {mesh.cellpos}')
-    print(f'mesh.nodepos = {mesh.nodepos}')
+    print(f'mesh.cellpos = {mesh.cellpos[:10]}')
+    print(f'mesh.nodepos = {mesh.nodepos[:10]}')

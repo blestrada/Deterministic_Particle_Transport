@@ -1,0 +1,14 @@
+problem_type    marshak_wave
+dt              0.0001
+xsize           0.15
+dx              0.0015
+cycles          3000
+ns              300
+left_bc         vacuum
+right_bc        vacuum
+sigma_s         0.0
+temp0           0.01
+radtemp0        0.01
+n_max           2000000
+mode            rn
+scattering      analog

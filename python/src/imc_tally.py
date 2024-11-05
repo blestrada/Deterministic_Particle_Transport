@@ -58,14 +58,39 @@ def SuOlson_tally():
 def marshak_wave_tally():
     """Tally end of timestep quantities """
 
+    print(f'The total energy deposited this time-step = {np.sum(mesh.nrgdep)}')
+
+
+    # start-of-step material energy
+    matnrg = np.zeros(mesh.ncells)
+    matnrg[:] = mat.rho * mat.b[:] * mesh.temp[:]
+    print(f'start of step material energy = {matnrg[:10]}')
+
     # Radiation energy density
     radenergydens = np.zeros(mesh.ncells)
     radenergydens[:] = phys.a * mesh.temp[:] ** 4 # keV/cm^3
-    
-    # Temperature increase
+    print(f'start of step radiation energy = {radenergydens[:10]}')
+
+
+    # Energy increase
     nrg_inc = np.zeros(mesh.ncells)
     nrg_inc[:] = (mesh.nrgdep[:] / mesh.dx) - (mesh.sigma_a[:] * mesh.fleck[:] * radenergydens[:] * phys.c * time.dt) 
   
-    mesh.temp[:] = mesh.temp[:] +  nrg_inc[:] / (mat.b[:])
+    mesh.matnrgdens[:] = mesh.matnrgdens[:] + nrg_inc[:]
+    print(f'end of step matnrgdens = {mesh.matnrgdens[:10]}')
 
-    print(f'mesh.temp = {mesh.temp}')
+    # Material temperature update
+    mesh.temp[:] = mesh.temp[:] + nrg_inc[:] / mat.b[:]
+
+    print(f'mesh.temp = {mesh.temp[:10]}')
+    print(f'mesh.temp last 10 = {mesh.temp[-10:]}')
+    # Save radiation energy
+    mesh.radnrgdens = np.zeros(mesh.ncells)
+    for particle in part.particle_prop:
+        cell_index = particle[2]
+        mesh.radnrgdens[cell_index] += particle[5] / mesh.dx
+
+    mesh.radtemp = (mesh.radnrgdens / phys.a) ** (1/4)
+
+    print(f'end of step mesh.radnrgdens = {mesh.radnrgdens[:10]}')
+    print(f'mesh.radtemp = {mesh.radtemp[:10]}')

@@ -24,7 +24,7 @@ mat_benchtwo = [[0.00242, 0.00242, 0.00242, 0.00242, 0.00235, 0.00121, 0.00003, 
                ] # ca = 0.5, cs = 0.5
 
 # Create figure for radiation energy density plot
-plt.figure(figsize=(8, 5))
+plt.figure(figsize=(7, 6))
 
 # Open the output file
 fname = open("SuOlson1997-case2.out", "rb")
@@ -33,7 +33,7 @@ fname = open("SuOlson1997-case2.out", "rb")
 times = [r"$\tau$ = 0.1", r"$\tau$ = 1.0", r"$\tau$ = 10", r"$\tau$ = 100"]
 
 # Loop to read and plot data from the output file
-colors = ['red', 'blue', 'green', 'black']  # List of colors for each iteration
+colors = ['blue', 'crimson', 'purple', 'black']  # List of colors for each iteration
 
 for i in range(3):
     time_line = fname.readline().decode().strip()  # Read the time line
@@ -43,20 +43,20 @@ for i in range(3):
     radnrgdens = pickle.load(fname) # radiation energy density
 
     # Plot the radiation energy density data
-    plt.plot(xdata, radnrgdens, color=colors[i], marker='o', label=f"Radiation at {times[i]} (IDPT)", linewidth=2, alpha=.5)
+    plt.plot(xdata, radnrgdens, color=colors[i], marker='o', label=f"Radiation at {times[i]} (DPT)", linewidth=2, markersize='5')
 
 # Now plot benchmark data 
-plt.plot(x_bench, rad_benchtwo[0], 'rx--', label=r'Radiation at $\tau$ = 0.1 (Benchmark)', linewidth=2)  
-plt.plot(x_bench, rad_benchtwo[2], 'bx--', label=r'Radiation at $\tau$ = 1.0 (Benchmark)', linewidth=2)
-plt.plot(x_bench, rad_benchtwo[4], 'gx--', label=r'Radiation at $\tau$ = 10 (Benchmark)', linewidth=2)
+plt.plot(x_bench, rad_benchtwo[0], 'x--', label=r'Radiation at $\tau$ = 0.1 (Benchmark)', linewidth=1, color='orange')  
+plt.plot(x_bench, rad_benchtwo[2], 'x--', label=r'Radiation at $\tau$ = 1.0 (Benchmark)', linewidth=1, color='teal')
+plt.plot(x_bench, rad_benchtwo[4], 'x--', label=r'Radiation at $\tau$ = 10 (Benchmark)', linewidth=1, color='forestgreen')
 
-plt.xlim(0.0, 4.0)
+plt.xlim(0.0, 5.0)
 plt.ylim(0.0, 2.5)
 plt.xlabel("x")
 plt.ylabel("Radiation Energy Density")
 
 # Add legend
-plt.legend(loc='upper right', numpoints=1, frameon=False)
+plt.legend(loc='upper right', numpoints=1, frameon=True)
 
 # Save figure for radiation energy density
 plt.savefig("SuOlson1997-case2-rad.png", bbox_inches="tight", dpi=900)
@@ -66,7 +66,7 @@ plt.show()
 fname.close()
 
 # Create figure for material energy density plot
-plt.figure(figsize=(8, 5))
+plt.figure(figsize=(7, 6))
 
 # Open the output file again to read the data for material energy density
 fname = open("SuOlson1997-case2.out", "rb")
@@ -80,23 +80,23 @@ for i in range(3):
     radnrgdens = pickle.load(fname) # radiation energy density
 
     # Plot the material energy density data
-    plt.plot(xdata, matnrgdens, color=colors[i], marker='o', label=f"Material at {times[i]} (IDPT)", linewidth=2, alpha=.5)
+    plt.plot(xdata, matnrgdens, color=colors[i], marker='o', label=f"Material at {times[i]} (DPT)", linewidth=2, markersize='5')
 
 # Now plot benchmark data for material
 # Uncomment if you want to add material benchmark data
-plt.plot(x_bench, mat_benchtwo[0], 'rx-', label=r'Material at $\tau$ = 0.1 (Benchmark)', linewidth=2)  
-plt.plot(x_bench, mat_benchtwo[2], 'bx-.', label=r'Material at $\tau$ = 1.0 (Benchmark)', linewidth=2)  
-plt.plot(x_bench, mat_benchtwo[4], 'gx-.', label=r'Material at $\tau$ = 10 (Benchmark)', linewidth=2)  
+plt.plot(x_bench, mat_benchtwo[0], 'x--', label=r'Material at $\tau$ = 0.1 (Benchmark)', linewidth=1, color='orange')  
+plt.plot(x_bench, mat_benchtwo[2], 'x--', label=r'Material at $\tau$ = 1.0 (Benchmark)', linewidth=1, color='teal')  
+plt.plot(x_bench, mat_benchtwo[4], 'x--', label=r'Material at $\tau$ = 10 (Benchmark)', linewidth=1, color='forestgreen')  
 
-plt.xlim(0.01, 4.0)
-plt.ylim(1e-8, 3.0)
+plt.xlim(0.01, 8.0)
+plt.ylim(1e-3, 1e2)
 plt.xlabel("x")
 plt.ylabel("Material Energy Density")
 plt.yscale('log')
 plt.xscale('log')
 
 # Add legend
-plt.legend(loc='lower left', numpoints=1, frameon=False)
+plt.legend(loc='upper right', numpoints=1, frameon=True)
 
 # Save figure for material energy density
 plt.savefig("SuOlson1997-case2-mat.png", bbox_inches="tight", dpi=900)

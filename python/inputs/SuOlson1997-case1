@@ -2,9 +2,9 @@ problem_type    SuOlson1997
 x_0             0.5
 tau_0           10.0
 dt              0.01
-xsize           20.0
+xsize           10.0
 dx              0.05
-cycles          10000
+cycles          1000
 Nx              5
 Nmu             10
 Nt              5

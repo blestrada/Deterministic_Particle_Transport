@@ -17,7 +17,9 @@ sigma_a = -1.0
 sigma_s = -1.0
 sigma_t = -1.0
 fleck = -1.0
+beta = -1.0
 
+nrg_leaked = 0.0
 radnrgdens = -1.0
 matnrgdens = -1.0
 # Nodal arrays

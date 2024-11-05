@@ -24,18 +24,18 @@ plt.plot(x_values[:len(radiation_at_1)], radiation_at_1, 'r--', label=r'Radiatio
 plt.plot(x_values[:len(material_at_1)], material_at_1, 'b--', label=r'Material at $\tau$ = 1 (Analytical)')
 
 # Open the output file
-fname = open("SuOlson1996-run11.out", "rb")
+fname = open("SuOlson1996-1.out", "rb")
 
 # Times corresponding to data in the output file
 times = [r"$\tau$ = 1", r"$\tau$ = 10", r"$\tau$ = 100"]
 
 # Loop to read and plot data from the output file
-for i in range(2):
+for i in range(3):
     time_line = fname.readline().decode().strip()  # Skip the time line and decode it properly
     
     xdata = pickle.load(fname)      # cellpos
-    temp = pickle.load(fname)       # material temp
-    radtemp = pickle.load(fname)    # radiation temp
+    # temp = pickle.load(fname)       # material temp
+    # radtemp = pickle.load(fname)    # radiation temp
     matnrgdens = pickle.load(fname) # material energy density
     radnrgdens = pickle.load(fname) # radiation energy density
 
@@ -45,7 +45,7 @@ for i in range(2):
 
 # Set axis labels and limits
 plt.xlim(0, 15.0)
-plt.ylim(0, 1.0)
+plt.ylim(0, 2.0)
 # plt.yscale('log')
 # plt.xscale('log')
 plt.xlabel("x - cm")
@@ -55,7 +55,7 @@ plt.ylabel("Energy Density")
 plt.legend(loc='upper right', numpoints=1, frameon=False)
 
 # Save figure
-plt.savefig("SuOlson1996-run12.png", bbox_inches="tight", dpi=900)
+plt.savefig("SuOlson1996-1.png", bbox_inches="tight", dpi=900)
 
 # Optionally show the plot
 plt.show()

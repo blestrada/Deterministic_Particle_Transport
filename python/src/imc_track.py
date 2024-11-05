@@ -77,12 +77,8 @@ def run_random():
             #     ptcl.particle_prop[iptcl][5] = -1.0
             #     break
 
-            # print(f'nrg_change = {nrg_change}')
-            # print(f'frac_absorbed = {frac_absorbed}')
-            # print(f'frac_scattered = {frac_scattered}')
             nrgdep[icell] += nrg - newnrg
-            # nrgscattered[icell] += nrg * (1 - exp(-mesh_sigma_t[icell] * dist)) * ((1-mesh_fleck[icell]) * mesh_sigma_a[icell] + mesh_sigma_s[icell]) / mesh_sigma_t[icell]
-
+    
             # Advance position, time, and energy
             xpos += mu * dist
             ttt += dist * phys_invc
@@ -94,8 +90,8 @@ def run_random():
                 if mu < 0: # If going left
                     if icell == 0: # If at the leftmost cell
                         if mesh_leftbc == 'vacuum':
-                            print(f' particle escapes left.')
                             # Flag particle for later destruction
+                            mesh.nrg_leaked += ptcl.particle_prop[iptcl][5]
                             ptcl.particle_prop[iptcl][5] = -1.0
                             break
                         elif mesh_leftbc == 'reflecting':
@@ -108,6 +104,7 @@ def run_random():
                     if icell == top_cell:
                         if mesh_rightbc == 'vacuum':
                             # Flag particle for later destruction
+                            mesh.nrg_leaked += ptcl.particle_prop[iptcl][5]
                             ptcl.particle_prop[iptcl][5] = -1.0
                             break
                         elif mesh_rightbc == 'reflecting':
@@ -141,13 +138,11 @@ def run():
 
     # Create local storage for the energy deposited this time-step
     mesh.nrgdep[:] = 0.0
-    mesh.nrgscattered[:] = 0.0
     ptcl.n_census = 0    
 
     endsteptime = time.time + time.dt
 
     # optimizations
-    ran = np.random.uniform()
     exp = np.exp
     log = np.log
     nrgdep = np.zeros(mesh.ncells)
@@ -186,15 +181,8 @@ def run():
             # Calculate distance to census
             dist_cen = phys_c * (endsteptime - ttt)
 
-            # Calculate distance to collision
-            if ptcl.scattering == 'analog':
-                d_coll = -log(ran) / (mesh_sigma_s[icell] + (1 - mesh_fleck[icell]) * mesh_sigma_a[icell])
-
-            if ptcl.scattering == 'implicit':
-                d_coll = float('inf')
-
             # Actual distance - whichever happens first
-            dist = min(dist_b, dist_cen, d_coll)
+            dist = min(dist_b, dist_cen)
 
             # Calculate new particle energy
             newnrg = nrg * exp(-mesh_sigma_t[icell] * dist)
@@ -231,9 +219,10 @@ def run():
                 if mu < 0: # If going left
                     if icell == 0: # If at the leftmost cell
                         if mesh_leftbc == 'vacuum':
-                            print(f' particle escapes left.')
                             # Flag particle for later destruction
+                            mesh.nrg_leaked += ptcl.particle_prop[iptcl][5]
                             ptcl.particle_prop[iptcl][5] = -1.0
+                            # print(f'particle leaks left.')
                             break
                         elif mesh_leftbc == 'reflecting':
                             mu *= -1.0  # Reverse direction
@@ -245,7 +234,9 @@ def run():
                     if icell == top_cell:
                         if mesh_rightbc == 'vacuum':
                             # Flag particle for later destruction
+                            mesh.nrg_leaked += ptcl.particle_prop[iptcl][5]
                             ptcl.particle_prop[iptcl][5] = -1.0
+                            # print(f'particle leaks right.')
                             break
                         elif mesh_rightbc == 'reflecting':
                             mu *= -1.0  # Reverse direction
@@ -261,29 +252,22 @@ def run():
                 ptcl.n_census += 1
                 break
                 
-            # If event was collision, also update frequency and direction
-            if dist == d_coll:
-                # Collision (i.e. absorption, but treated as pseudo-scattering)
-                mu = 1.0 - 2.0 * np.random.uniform()
-                
-
         # End loop over history segments
 
     # End loop over particles
     mesh.nrgdep[:] = nrgdep[:]
-    mesh.nrgscattered[:] += nrgscattered[:]
-    print(f'mesh.nrgdep = {mesh.nrgdep[:10]}')
-    print(f'mesh.nrgscattered = {mesh.nrgscattered}')
-    if ptcl.scattering == 'implicit':
-        do_implicit_scattering()
+    mesh.nrgscattered[:] = nrgscattered[:]
+    
+    do_implicit_scattering()
 
     #print(f'Energy deposited in time-step = {nrgdep}')
 
 
 def do_implicit_scattering():
     iterations = 0
-    # print(f'mesh.nrgscattered before scattering iterations = {mesh.nrgscattered}')
-    mesh_tolerance = 0.01 * mesh.nrgscattered
+    # print(f'mesh.nrgdep before scattering iterations = {mesh.nrgdep[:10]}')
+    # print(f'mesh.nrgscattered before scattering iterations = {mesh.nrgscattered[:10]}')
+    mesh_tolerance = 0.1 * mesh.nrgscattered
     while np.all(mesh.nrgscattered > mesh_tolerance):
 
         # Make source particles
@@ -304,13 +288,16 @@ def do_implicit_scattering():
                 for mu in angles:
                     for ttt in emission_times:
                         ptcl.scattered_particles.append([origin, ttt, icell, xpos, mu, nrg, startnrg])
-        
+                    
+        # Set mesh.nrgscattered to zero now.
+        mesh.nrgscattered = np.zeros(mesh.ncells)
+
         # Advance the particles
         endsteptime = time.time + time.dt
         # optimizations
         exp = np.exp
-        nrgdep = [0.0] * mesh.ncells
-        nrgscattered = [0.0] * mesh.ncells
+        tempnrgdep = np.zeros(mesh.ncells)
+        tempnrgscattered = np.zeros(mesh.ncells)
         mesh_nodepos = mesh.nodepos
         phys_c = phys.c
         top_cell = mesh.ncells - 1
@@ -325,16 +312,20 @@ def do_implicit_scattering():
 
         # Loop over all particles
         for iptcl in range(len(ptcl.scattered_particles)):
+            # Skip if particle flagged for deletion
+            if ptcl.scattered_particles[iptcl][5] < 0:
+                continue
             # Get particle's initial properties
             (ttt, icell, xpos, mu, nrg, startnrg) = ptcl.scattered_particles[iptcl][1:7]
             
             # Loop over segments in the history (between boundary-crossings and collisions)
             while True:
                 # Distance to boundary
+                # Calculate distance to boundary
                 if mu > 0.0:
-                    dist_b = (mesh_nodepos[icell + 1] - xpos) / abs(mu)
+                    dist_b = (mesh_nodepos[icell + 1] - xpos) / mu
                 else:
-                    dist_b = (xpos - mesh_nodepos[icell]) / abs(mu)
+                    dist_b = (mesh_nodepos[icell] - xpos) / mu
                 
                 # Distance to census
                 dist_cen = phys_c * (endsteptime - ttt)
@@ -363,8 +354,8 @@ def do_implicit_scattering():
                 # print(f'nrg_change = {nrg_change}')
                 # print(f'frac_absorbed = {frac_absorbed}')
                 # print(f'frac_scattered = {frac_scattered}')
-                nrgdep[icell] += nrg_change * frac_absorbed
-                nrgscattered[icell] += nrg_change * frac_scattered
+                tempnrgdep[icell] += nrg_change * frac_absorbed
+                tempnrgscattered[icell] += nrg_change * frac_scattered
 
 
                 # Advance position, time, and energy of the particle
@@ -378,12 +369,14 @@ def do_implicit_scattering():
                     if mu < 0: # If going left
                         if icell == 0: # If at the leftmost cell
                             if mesh_leftbc == 'vacuum':
-                                print(f' particle escapes left.')
                                 # Flag particle for later destruction
-                                ptcl.particle_prop[iptcl][5] = -1.0
+                                mesh.nrg_leaked += ptcl.scattered_particles[iptcl][5]
+                                ptcl.scattered_particles[iptcl][5] = -1.0
+                                # print(f'particle leaks left.')
                                 break
                             elif mesh_leftbc == 'reflecting':
                                 mu *= -1.0  # Reverse direction
+                                print(f'particle reflected.')
                         else:  # If not at the leftmost cell
                             icell -= 1  # Move to the left cell
 
@@ -392,7 +385,9 @@ def do_implicit_scattering():
                         if icell == top_cell:
                             if mesh_rightbc == 'vacuum':
                                 # Flag particle for later destruction
-                                ptcl.particle_prop[iptcl][5] = -1.0
+                                mesh.nrg_leaked += ptcl.scattered_particles[iptcl][5]
+                                ptcl.scattered_particles[iptcl][5] = -1.0
+                                # print(f'particle leaks right.')
                                 break
                             elif mesh_rightbc == 'reflecting':
                                 mu *= -1.0  # Reverse direction
@@ -410,13 +405,19 @@ def do_implicit_scattering():
 
             # End loop over history segment
 
-        # End loop over particles
 
-        # print(f'nrgdep after 1 iteration = {nrgdep}')
+        # print(f'nrgdep after iteration = {tempnrgdep[:10]}')
         # Update global energy banks
-        # print(f'nrgscattered after 1 iteration = {nrgscattered}')
-        mesh.nrgdep[:] += nrgdep[:]
-        mesh.nrgscattered[:] = nrgscattered[:]
+        # print(f'nrgscattered after iteration = {tempnrgscattered[:10]}')
+        mesh.nrgdep[:] += tempnrgdep[:]
+        mesh.nrgscattered[:] = tempnrgscattered[:]
+        
+
+        # for iptcl in range(len(ptcl.scattered_particles)):
+        #     # Get particle's initial properties
+        #     (ttt, icell, xpos, mu, nrg, startnrg) = ptcl.scattered_particles[iptcl][1:7]
+        #     print(f'ttt = {ttt}, icell = {icell}, xpos = {xpos}, mu = {mu}, nrg = {nrg}, startnrg = {startnrg}')
+
 
         # Move scattered particles to the global particle list
         for entry in ptcl.scattered_particles:
@@ -436,12 +437,16 @@ def do_implicit_scattering():
 
         # Increment iterations
         # print(f'iteration completed.')
-        # print(f'Energy in scatter bank = {mesh.nrgscattered}')
+        # print(f'Energy scattered at end of iteration = {mesh.nrgscattered[:10]}')
         iterations += 1
     
     # Now, there is left over energy in mesh.nrgscattered. It is small, 
     # but we will dump it into the material to conserve energy and not throw it away.
     mesh.nrgdep[:] += mesh.nrgscattered[:]
+    mesh.nrgscattered[:] = 0.0
+    # print(f'Energy Deposited after scattering iterations = {mesh.nrgdep[:10]}')
+    # print(f'Energy Deposited after scattering iterations last 10 = {mesh.nrgdep[-10:]}')
+
     print(f'Number of scattering iterations until convergence = {iterations}')
         
 

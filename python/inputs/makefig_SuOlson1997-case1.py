@@ -26,16 +26,16 @@ mat_benchone = [[0.00468, 0.00468, 0.00468, 0.00468, 0.00455, 0.00234, 0.00005, 
                ] # ca = 1, cs = 0
 
 # Create figure and axis for combined plot
-plt.figure(figsize=(6, 4))
+plt.figure(figsize=(7, 6))
 
 # Open the output file
-fname = open("SuOlson1997-RN-run1.out", "rb")
+fname = open("SuOlson1997-case1.out", "rb")
 
 # Times corresponding to data in the output file
 times = [r"$\tau$ = 0.1", r"$\tau$ = 1.0", r"$\tau$ = 10", r"$\tau$ = 100"]
 
 # Loop to read and plot data from the output file
-colors = ['red', 'blue', 'green', 'black']  # List of colors for each iteration
+colors = ['blue', 'crimson', 'purple', 'black']  # List of colors for each iteration
 
 for i in range(3):
     time_line = fname.readline().decode().strip()  # Read the time line
@@ -45,15 +45,15 @@ for i in range(3):
     radnrgdens = pickle.load(fname) # radiation energy density
 
     # Plot the radiation energy density data
-    plt.plot(xdata, radnrgdens, color=colors[i], marker='o', label=f"Radiation at {times[i]} (IDPT)", linewidth=2, alpha=.5)
+    plt.plot(xdata, radnrgdens, color=colors[i], marker='o', label=f"Radiation at {times[i]} (IDPT)", linewidth=1)
 
 # Now plot benchmark data 
-plt.plot(x_bench, rad_benchone[0], 'rx--', label=r'Radiation at $\tau$ = 0.1 (Benchmark)', linewidth=2)  
-plt.plot(x_bench, rad_benchone[2], 'bx--', label=r'Radiation at $\tau$ = 1.0 (Benchmark)', linewidth=2)
-plt.plot(x_bench, rad_benchone[4], 'gx--', label=r'Radiation at $\tau$ = 10 (Benchmark)', linewidth=2)
+plt.plot(x_bench, rad_benchone[0], 'x--', label=r'Radiation at $\tau$ = 0.1 (Benchmark)', linewidth=1, color='crimson')  
+plt.plot(x_bench, rad_benchone[2], 'x--', label=r'Radiation at $\tau$ = 1.0 (Benchmark)', linewidth=1, color='purple')
+plt.plot(x_bench, rad_benchone[4], 'x--', label=r'Radiation at $\tau$ = 10 (Benchmark)', linewidth=1, color='teal')
 
 plt.ylim(0.0, 2.5)
-plt.xlim(0.0, 4.0)
+plt.xlim(0.0, 8.0)
 plt.xlabel("x")
 plt.ylabel("Radiation Energy Density")
 
@@ -61,17 +61,17 @@ plt.ylabel("Radiation Energy Density")
 plt.legend(loc='upper right', numpoints=1, frameon=False)
 
 # Save figure
-plt.savefig("SuOlson1997-RN-run1-rad.png", bbox_inches="tight", dpi=900)
+plt.savefig("SuOlson1997-case1-rad.png", bbox_inches="tight", dpi=900)
 plt.show()
 
 # Close the file
 fname.close()
 
 # Create figure for material energy density plot
-plt.figure(figsize=(6, 4))
+plt.figure(figsize=(7, 6))
 
 # Open the output file again to read the data for material energy density
-fname = open("SuOlson1997-case2.out", "rb")
+fname = open("SuOlson1997-case1.out", "rb")
 
 # Loop to read and plot data from the output file for material
 for i in range(3):
@@ -82,22 +82,22 @@ for i in range(3):
     radnrgdens = pickle.load(fname) # radiation energy density
 
     # Plot the material energy density data
-    plt.plot(xdata, matnrgdens, color=colors[i], marker='o', label=f"Material at {times[i]} (IDPT)", linewidth=2, alpha=.5)
+    plt.plot(xdata, matnrgdens, color=colors[i], marker='o', label=f"Material at {times[i]} (IDPT)", linewidth=1)
 
 # Now plot benchmark data for material
-plt.plot(x_bench, mat_benchone[0], 'rx-', label=r'Material at $\tau$ = 0.1 (Benchmark)', linewidth=2)  
-plt.plot(x_bench, mat_benchone[2], 'bx-.', label=r'Material at $\tau$ = 1.0 (Benchmark)', linewidth=2)  
-plt.plot(x_bench, mat_benchone[4], 'gx-.', label=r'Material at $\tau$ = 10 (Benchmark)', linewidth=2)  
+plt.plot(x_bench, mat_benchone[0], 'x-', label=r'Material at $\tau$ = 0.1 (Benchmark)', linewidth=1, color='crimson')  
+plt.plot(x_bench, mat_benchone[2], 'x-', label=r'Material at $\tau$ = 1.0 (Benchmark)', linewidth=1, color='purple')  
+plt.plot(x_bench, mat_benchone[4], 'x-', label=r'Material at $\tau$ = 10 (Benchmark)', linewidth=1, color='teal')  
 
-plt.xlim(0.01, 4.0)
-plt.ylim(1e-8, 3.0)
+plt.xlim(0.01, 8.0)
+plt.ylim(1e-3, 1e2)
 plt.xlabel("x")
 plt.ylabel("Material Energy Density")
 plt.yscale('log')
 plt.xscale('log')
 
 # Add legend
-plt.legend(loc='lower left', numpoints=1, frameon=False)
+plt.legend(loc='upper right', numpoints=1, frameon=True)
 
 # Save figure for material energy density
 plt.savefig("SuOlson1997-case1-mat.png", bbox_inches="tight", dpi=900)

@@ -18,20 +18,26 @@ def SuOlson_update():
 
 def marshak_wave_update():
     """Update temperature-dependent quantities at start of time-step"""
+    # Calculate beta
+    mesh.beta = np.zeros(mesh.ncells)
+    mesh.beta[:] = 4 * phys.a * mesh.temp[:] ** 3 / (1.0 * mat.b[:]) # rho = 1.0
+    # print(f'mesh.beta = {mesh.beta[:10]}')
+    
     # Calculate new opacity
     mesh.sigma_a = np.zeros(mesh.ncells)
-    mesh.sigma_a[:] = 1000.0 / mesh.temp[:] ** 3
-    print(f'mesh.sigma_a = {mesh.sigma_a}')
+    mesh.sigma_a[:] = 1000.0 / (mesh.temp[:] ** 3)
+    # print(f'mesh.sigma_a = {mesh.sigma_a[:10]}')
+    # print(f'last 10 mesh.sigma_a = {mesh.sigma_a[-10:]}')
 
     # Calculate new fleck factor
     mesh.fleck = np.zeros(mesh.ncells)
-    mesh.fleck[:] = 1.0 / (1.0 + mesh.sigma_a[:] * phys.c * time.dt)
-    print(f'mesh.fleck = {mesh.fleck}')
+    mesh.fleck[:] = 1.0 / (1.0 + mesh.beta[:] * mesh.sigma_a[:] * phys.c * time.dt)
+    # print(f'mesh.fleck = {mesh.fleck[:10]}')
 
     # Calculate total opacity
-    mesh.sigma_t = np.zeros(mesh.ncells)
-    mesh.sigma_t[:] = mesh.fleck[:] * mesh.sigma_a[:] + (1.0 - mesh.fleck[:]) * mesh.sigma_a[:]
-    print(f'mesh.sigma_t = {mesh.sigma_t}')
+    mesh.sigma_t = np.copy(mesh.sigma_a)
+    # mesh.sigma_t[:] = mesh.sigma_a[:] * mesh.fleck[:] + (1.0 - mesh.fleck[:]) * mesh.sigma_a[:] + mesh.sigma_s[:]
+    # print(f'mesh.sigma_t = {mesh.sigma_t[:10]}')
 
 
 def population_control():
