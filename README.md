@@ -1,4 +1,4 @@
-# Implicit Deterministic Particle Transport
+# Deterministic Particle Transport
 
 ## Installation
 To create the Conda environment:
