@@ -1,4 +1,4 @@
-# MonteCarloWithNoRandomNumbers
+# Implicit Deterministic Particle Transport
 
 ## Installation
 To create the Conda environment:
