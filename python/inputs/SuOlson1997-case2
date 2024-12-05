@@ -15,6 +15,6 @@ left_bc         reflecting
 right_bc        vacuum
 temp0           .003162278
 radtemp0        .003162278
-n_max           2000000
+n_max           1000000
 mode            nrn
 scattering      implicit

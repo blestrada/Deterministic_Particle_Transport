@@ -118,9 +118,6 @@ def SuOlson1997(output_file):
     print(f'plottimes = {plottimes}')
     plottimenext = 0
 
-    # Open output file
-    fname = open(output_file, "wb")
-
     print(f' temperature = {mesh.temp[:10]}')
     print(f' rad temp = {mesh.radtemp[:10]}')
 
@@ -133,78 +130,84 @@ def SuOlson1997(output_file):
     # Begin time
     time.time = 0.0
 
+    # Columns: [origin, emission_time, icell, xpos, mu, nrg, startnrg]
+    part.particle_prop = np.zeros((part.max_array_size, 7), dtype=np.float64)
+    part.n_particles = np.zeros(1, dtype=int)
     # Set energy densities
     mesh.radnrgdens = np.zeros(mesh.ncells)
     mesh.matnrgdens = np.zeros(mesh.ncells)
 
-    # Create census grid
-    imc_source.create_census_grid()
-
     # Total opacity
-    mesh.sigma_t = mesh.fleck * mesh.sigma_a + (1 - mesh.fleck) * mesh.sigma_a + mesh.sigma_s
+    mesh.sigma_t = mesh.fleck * mesh.sigma_a + (1.0 - mesh.fleck) * mesh.sigma_a + mesh.sigma_s
     print(f'mesh.sigma_t = {mesh.sigma_t}')
     # Loop over timesteps
-
-    for time.step in range(1, time.ns + 1):
-        print(f'Step: {time.step}')
-        # Update temperature dependent quantities
-        imc_update.SuOlson_update()
-
-        # Source new particles
-        if part.mode == 'nrn':
-            imc_source.create_body_source_particles()
-            if time.time < vol.tau_0/phys.c:
-                print(f'volume source particles created.')
-                imc_source.create_volume_source_particles()
-            
-
-        if part.mode == 'rn':
-            imc_source.volume_sourcing_random()
-            
-        # Track particles through the mesh
-        if part.mode == 'rn':
-            imc_track.run_random()
-        if part.mode == 'nrn':
-            imc_track.run()
-
-        imc_track.clean()
-
-        # Check for particles with energies less than zero
-        for iptcl in range(len(part.particle_prop)):
-            nrg = part.particle_prop[iptcl][5]
-            if nrg < 0.0:
-                print(f'Particle prop = {part.particle_prop[iptcl]}')
-                raise ValueError(f"Particle {iptcl} has negative energy: {nrg}")
-
-        # Tally
-        imc_tally.SuOlson_tally()
-
-        # Update time
-        time.time = round(time.time + time.dt, 5)
-        # Apply population control on particles if needed
-        if len(part.particle_prop) > part.n_max and part.mode == 'nrn':
-            imc_update.population_control()
-
-        if len(part.particle_prop) > part.n_max and part.mode == 'rn':
-            # insert population control method here.
-            print()
-
-        # Plot
-        if plottimenext <= 3:
-            print(f'Time = {time.time}')
-            if (time.time) >= plottimes[plottimenext]:
-                print("Plotting {:6d}".format(plottimenext))
-                print("at target time {:24.16f}".format(plottimes[plottimenext]))
-                print("at actual time {:24.16f}".format(time.time))
+    try:
+        with open(output_file, "wb") as fname:
+            for time.step in range(1, time.ns + 1): # time.ns + 1
+                print(f'Step: {time.step} @ time = {time.time}')
+                # Reset energy deposition and scattering arrays
+                mesh.nrgdep = np.zeros(mesh.ncells)
+                # Update temperature dependent quantities
+                mat.b = imc_update.SuOlson_update(mesh.temp)
                 
-                fname.write("Time = {:24.16f}\n".format(time.time).encode())
-                pickle.dump(mesh.cellpos, fname, 0)
-                pickle.dump(mesh.matnrgdens, fname, 0)
-                pickle.dump(mesh.radnrgdens, fname, 0)
-                plottimenext = plottimenext + 1
+                # Source new particles
+                if part.mode == 'nrn':
+                    part.n_particles, part.particle_prop = imc_source.create_body_source_particles(part.n_particles, part.particle_prop, mesh.temp, time.time)
+                    if time.time < vol.tau_0/phys.c:
+                        print(f'volume source particles created.')
+                        imc_source.create_volume_source_particles()
+                    
+                if part.mode == 'rn':
+                    imc_source.volume_sourcing_random()
+            
+                # Track particles through the mesh
+                if part.mode == 'rn':
+                    imc_track.run_random()
+                if part.mode == 'nrn':
+                    
+                    mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run(part.n_particles, part.particle_prop, mesh.nrgdep, mesh.nrgscattered, time.time)
+                    print(f'mesh.nrgdep = {mesh.nrgdep[:10]}')
+                    
+                    
+                part.n_particles, part.particle_prop  = imc_track.clean(part.n_particles, part.particle_prop)
 
-    # Close file
-    fname.close()
+                # Check for particles with energies less than zero
+                # for iptcl in range(len(part.particle_prop)):
+                #     nrg = part.particle_prop[iptcl][5]
+                #     if nrg < 0.0:
+                #         print(f'Particle prop = {part.particle_prop[iptcl]}')
+                #         raise ValueError(f"Particle {iptcl} has negative energy: {nrg}")
+
+                # Tally
+                mesh.matnrgdens, mesh.radnrgdens, mesh.temp = imc_tally.SuOlson_tally(mesh.nrgdep, part.n_particles, part.particle_prop, mesh.matnrgdens, mesh.temp)
+
+                # Update time
+                time.time = round(time.time + time.dt, 5)
+
+                # Apply population control on particles if needed
+                # if part.n_particles > part.n_max and part.mode == 'nrn':
+                # # if time.step == 1000:
+                #     part.n_particles, part.particle_prop = imc_update.population_control(part.n_particles, part.particle_prop, time.time)
+
+
+                # Plot
+                if plottimenext <= 3:
+                    print(f'Time = {time.time}')
+                    if (time.time) >= plottimes[plottimenext]:
+                        print("Plotting {:6d}".format(plottimenext))
+                        print("at target time {:24.16f}".format(plottimes[plottimenext]))
+                        print("at actual time {:24.16f}".format(time.time))
+                        
+                        fname.write("Time = {:24.16f}\n".format(time.time).encode())
+                        pickle.dump(mesh.cellpos, fname, 0)
+                        pickle.dump(mesh.matnrgdens, fname, 0)
+                        pickle.dump(mesh.radnrgdens, fname, 0)
+                        plottimenext = plottimenext + 1
+    except KeyboardInterrupt:
+        print("Calculation interrupted. Saving data...")
+    finally:
+        print("Data saved successfully.")
+
 
 
 def marshak_wave(output_file):

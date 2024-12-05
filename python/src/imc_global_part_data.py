@@ -11,6 +11,9 @@ n_max = -1
 n_census = -1
 
 # Global list of particle properties
+n_particles = 0
+n_scattered_particles = 0
+max_array_size = 14_000_000
 particle_prop = []
 scattered_particles = []
 

@@ -42,8 +42,8 @@ def make():
     mesh.sigma_a = np.ones(mesh.ncells) * mat.sigma_a  # Opacities
     mesh.sigma_s = np.ones(mesh.ncells) * mat.sigma_s
     
-    mesh.nrgdep = np.zeros(mesh.ncells)  # Total energy deposited in timestep
-    mesh.nrgscattered = np.zeros(mesh.ncells)
+    mesh.nrgdep = np.zeros(mesh.ncells, dtype=np.float64)  # Total energy deposited in timestep
+    mesh.nrgscattered = np.zeros(mesh.ncells, dtype=np.float64)
 
     mesh.fleck = np.zeros(mesh.ncells) - 1.0 # Fleck factor
 

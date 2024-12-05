@@ -11,15 +11,21 @@ import imc_global_volsource_data as vol
 
 
 def create_census_grid():
+    # Create a 4D array: (cells, positions, angles, properties)
+    part.census_grid = np.zeros((mesh.ncells, part.Nx, part.Nmu, 4), dtype=np.float64)
+
     for icell in range(mesh.ncells):
-        # Create position, angle, and scattering arrays
+        # Calculate positions and angles
         x_positions = mesh.nodepos[icell] + (np.arange(part.Nx) + 0.5) * mesh.dx / part.Nx
         angles = -1 + (np.arange(part.Nmu) + 0.5) * 2 / part.Nmu
 
-        census_grid = [[icell, xpos, mu, 0] 
-               for xpos in x_positions 
-               for mu in angles]
-        part.census_grid.extend(census_grid)
+        for ix, xpos in enumerate(x_positions):
+            for imu, mu in enumerate(angles):
+                # Set values in the 4D census grid
+                part.census_grid[icell, ix, imu, 0] = icell  # Cell index
+                part.census_grid[icell, ix, imu, 1] = xpos   # Particle position
+                part.census_grid[icell, ix, imu, 2] = mu     # Particle angle
+                part.census_grid[icell, ix, imu, 3] = 0.0    # Initial energy (set to 0)
 
 
 def create_census_particles():
@@ -45,32 +51,36 @@ def create_census_particles():
         part.particle_prop.extend(particles)
 
 
-def create_body_source_particles():
+def create_body_source_particles(n_particles, particle_prop, temp, current_time):
     """Creates source particles for the mesh"""
     e_total_body = 0.0
     for icell in range(mesh.ncells):
-        # Create position, angle, and time arrays
+        # Define positions, angles, and emission times
         x_positions = mesh.nodepos[icell] + (np.arange(part.Nx) + 0.5) * mesh.dx / part.Nx
         angles = -1.0 + (np.arange(part.Nmu) + 0.5) * 2 / part.Nmu
-        emission_times = time.time + (np.arange(part.Nt) + 0.5) * time.dt / part.Nt
+        emission_times = current_time + (np.arange(part.Nt) + 0.5) * time.dt / part.Nt
 
-        # Assign energy-weights
+        # Calculate energy weight
         n_source_ptcls = part.Nx * part.Nmu * part.Nt
-        nrg = phys.c * mesh.fleck[icell] * mesh.sigma_a[icell] * phys.a * (mesh.temp[icell] ** 4) * time.dt * mesh.dx / n_source_ptcls
-        e_total_body += phys.c * mesh.fleck[icell] * mesh.sigma_a[icell] * phys.a * (mesh.temp[icell] ** 4) * time.dt * mesh.dx
+        nrg = phys.c * mesh.fleck[icell] * mesh.sigma_a[icell] * phys.a * (temp[icell] ** 4) * time.dt * mesh.dx / n_source_ptcls
+        e_total_body += phys.c * mesh.fleck[icell] * mesh.sigma_a[icell] * phys.a * (temp[icell] ** 4) * time.dt * mesh.dx
         startnrg = nrg
-        # Create particles and add them to global list
         origin = icell
-        
+
+        # Loop to create particles and add them to the preallocated array
         for xpos in x_positions:
             for mu in angles:
                 for ttt in emission_times:
-                    part.particle_prop.append([origin, ttt, icell, xpos, mu, nrg, startnrg])
-
+                    if n_particles[0] < part.max_array_size:
+                        # Fill the preallocated array with particle properties
+                        particle_prop[n_particles[0]] = [origin, ttt, icell, xpos, mu, nrg, startnrg]
+                        n_particles[0] += 1
+                    else:
+                        print("Warning: Maximum number of particles reached!")
+    
     # print(f'e_total_body = {e_total_body}')
-    e_surf = phys.a * phys.c / 4 * (bcon.T0 ** 4) * time.dt
     print(f'Body-source energy sourced this time-step = {np.sum(e_total_body)}')
-
+    return n_particles, particle_prop
 
 def create_body_source_particles_2():
 
@@ -222,23 +232,29 @@ def create_volume_source_particles():
     print(f'e_total_vol = {e_total_vol}')
 
     # Make particles from volume source
-    for icell in range(source_cells): # For each cell that has volume source energy
+    for icell in range(source_cells):
         # Create position, angle, and time arrays
         x_positions = mesh.nodepos[icell] + (np.arange(part.Nx) + 0.5) * mesh.dx / part.Nx
         angles = -1.0 + (np.arange(part.Nmu) + 0.5) * 2 / part.Nmu
         emission_times = time.time + (np.arange(part.Nt) + 0.5) * time.dt / part.Nt
 
-        # Assign energy-weights
+        # Calculate energy weight per particle
         n_source_ptcls = part.Nx * part.Nmu * part.Nt
         nrg = e_source[icell] / n_source_ptcls
         startnrg = nrg
         origin = icell
 
-        # Create particles and add them to the global list
+        # Create particles and add them to the preallocated array
         for xpos in x_positions:
             for mu in angles:
                 for ttt in emission_times:
-                    part.particle_prop.append([origin, ttt, icell, xpos, mu, nrg, startnrg])
+                    if part.n_particles < part.max_array_size:
+                        # Fill the preallocated array with particle properties
+                        part.particle_prop[part.n_particles] = [origin, ttt, icell, xpos, mu, nrg, startnrg]
+                        part.n_particles[0] += 1
+                    else:
+                        print("Warning: Maximum number of particles reached!")
+                        break  # Exit if we exceed the max_particles
 
 
 

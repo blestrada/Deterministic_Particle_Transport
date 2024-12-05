@@ -13,6 +13,7 @@ radtemp = -1.0
 radtemp0 = -1.0
 nrgdep = -1.0
 nrgscattered = -1.0
+nrgdep_from_scattering = -1.0
 sigma_a = -1.0
 sigma_s = -1.0
 sigma_t = -1.0
