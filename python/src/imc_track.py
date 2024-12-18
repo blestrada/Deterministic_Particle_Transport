@@ -2,12 +2,106 @@
 
 import numpy as np
 from numba import njit, jit, objmode, gdb
+from scipy.optimize import newton
+import matplotlib.pyplot as plt
 
 import imc_global_mat_data as mat
 import imc_global_mesh_data as mesh
 import imc_global_part_data as ptcl
 import imc_global_phys_data as phys
 import imc_global_time_data as time
+
+@njit
+def brent_solver(f, a, b, tol=1e-5, max_iter=100):
+    """
+    Brent's Method for finding roots of a scalar function.
+
+    Parameters:
+        f (function): The function for which the root is sought.
+        a (float): Lower bound of the initial bracket.
+        b (float): Upper bound of the initial bracket.
+        tol (float): Tolerance for convergence.
+        max_iter (int): Maximum number of iterations.
+
+    Returns:
+        float: The root of the function.
+    """
+    fa = f(a)
+    fb = f(b)
+
+    if fa * fb > 0:
+        raise ValueError("The function must have different signs at a and b.")
+
+    if abs(fa) < abs(fb):
+        a, b = b, a
+        fa, fb = fb, fa
+
+    c, fc = a, fa
+    d = e = b - a  # Distance between a and b
+    for _ in range(max_iter):
+        if fb != 0 and fc != 0 and fa != 0:  # Use inverse quadratic interpolation
+            s = a * fb * fc / ((fa - fb) * (fa - fc)) + \
+                b * fa * fc / ((fb - fa) * (fb - fc)) + \
+                c * fa * fb / ((fc - fa) * (fc - fb))
+        else:  # Fall back to secant method
+            s = b - fb * (b - a) / (fb - fa)
+
+        # Conditions to accept the interpolation point
+        cond1 = not (a < s < b if a < b else b < s < a)
+        cond2 = abs(s - b) >= abs(b - c) / 2
+        cond3 = abs(s - b) >= abs(c - d) / 2 if e != d else False
+        cond4 = abs(b - c) < tol
+
+        if cond1 or cond2 or cond3 or cond4:
+            # Bisection step
+            s = (a + b) / 2
+            d = e = b - a
+
+        fs = f(s)
+        d, e = e, d  # Update step sizes
+
+        # Update points for next iteration
+        c, fc = b, fb
+        if fa * fs < 0:
+            b, fb = s, fs
+        else:
+            a, fa = s, fs
+
+        if abs(fb) < abs(fa):
+            a, b = b, a
+            fa, fb = fb, fa
+
+        # Check convergence
+        if abs(b - a) < tol or abs(fb) < tol:
+            return b
+
+    raise RuntimeError("Brent's method did not converge.")
+
+@njit
+def p_x_t_solve(dx, x_0, x_1, x, t, t_0, t_1, dt, X_s, T_s):
+    @njit
+    def f(chi):
+        numerator = 1.0 - chi * x_0 + np.exp(chi * dx) * (chi * x_1 - 1.0)
+        denominator = chi * (np.exp(chi * dx) - 1.0)
+        return numerator / denominator - X_s
+
+    @njit
+    def g(tau):
+        numerator = 1.0 - tau * t_0 + np.exp(tau * dt) * (tau * t_1 - 1.0)
+        denominator = tau * (np.exp(tau * dt) - 1.0)
+        return numerator / denominator - T_s
+
+    # Solve for chi using Brent's method
+    chi = brent_solver(f, -1e6, 1e6, tol=1e-3, max_iter=1000000)
+
+    # Solve for tau using Brent's method
+    tau = brent_solver(g, -1e6, 1e6, tol=1e-3, max_iter=1000000)
+
+    # Solve for P
+    P = chi * tau * (np.exp(chi * (x - x_0)) * np.exp(tau * (t - t_0))) / \
+        ((np.exp(chi * dx) - 1.0) * (np.exp(tau * dt) - 1.0))
+    return P
+
 
 
 def run_random():
@@ -140,6 +234,8 @@ def run(n_particles, particle_prop, nrgdep, nrgscattered, current_time):
     """Advance particles over a time-step, including implicit scattering."""
     nrgdep[:] = 0.0
     nrgscattered[:] = 0.0
+    xEs = np.zeros(mesh.ncells, dtype=np.float64)
+    tEs = np.zeros(mesh.ncells, dtype=np.float64)
     # Optimizations
     endsteptime = current_time + time.dt
     mesh_nodepos = mesh.nodepos
@@ -215,6 +311,16 @@ def run(n_particles, particle_prop, nrgdep, nrgscattered, current_time):
                 particle_prop[iptcl, 5] = -1.0
                 break
             #print(f'nrgdep = {nrgdep[:10]}')
+            # Calculate the average length of scatter
+            average_scatter_length = 1 / mesh_sigma_t[icell] * (1 - (1 + mesh_sigma_t[icell] * dist) * np.exp(-mesh_sigma_t[icell] * dist))/(1 - np.exp(-mesh_sigma_t[icell] * dist))
+            average_position_of_scatter = xpos + mu * average_scatter_length
+            # if iptcl== 0:
+            #     # print(f'average scattering length = {average_scatter_length}')
+            #     # print(f'average position of scatter = {average_position_of_scatter}')
+            average_time_of_scatter = ttt + average_scatter_length / phys_c
+            xEs[icell] += nrg_change * frac_scattered * average_position_of_scatter
+            tEs[icell] += nrg_change * frac_scattered * average_time_of_scatter
+
             # Advance position, time, and energy
             xpos += mu * dist
             ttt += dist * phys_invc
@@ -260,8 +366,17 @@ def run(n_particles, particle_prop, nrgdep, nrgscattered, current_time):
     epsilon = 1e-5
     iterations = 0
     converged = False
-    
 
+    # Calculate zone-wise average position of scatter and average time of scatter
+    X_s = np.zeros(mesh.ncells, dtype=np.float64)
+    T_s = np.zeros(mesh.ncells, dtype=np.float64)
+    print(f'xEs = {xEs[0]}')
+    print(f'nrgscattered = {nrgscattered[:10]}')
+    print(f'nrgscattered last 10 = {nrgscattered[-10:]}')
+    X_s = xEs[:] / nrgscattered[:]
+    T_s = tEs[:] / nrgscattered[:]
+    
+    
     # initialize nrgdep and nrgscattered variables
     while not converged:
         scattered_particles = np.zeros((ptcl.max_array_size, 7), dtype=np.float64)
@@ -270,11 +385,12 @@ def run(n_particles, particle_prop, nrgdep, nrgscattered, current_time):
         old_nrgscattered = np.zeros(mesh.ncells, dtype=np.float64)
         old_nrgscattered[:] = nrgscattered[:]
         # Create source particles based on energy scattered in each cell
+        P_tally = np.zeros(mesh.ncells, dtype=np.float64)
         for icell in range(mesh.ncells):
             # Create position, angle, time arrays
             x_positions = mesh.nodepos[icell] + (np.arange(ptcl.Nx) + 0.5) * mesh.dx / ptcl.Nx
             angles = -1.0 + (np.arange(ptcl.Nmu) + 0.5) * 2 / ptcl.Nmu
-            emission_times = time.time + (np.arange(ptcl.Nt) + 0.5) * time.dt / ptcl.Nt
+            emission_times = current_time + (np.arange(ptcl.Nt) + 0.5) * time.dt / ptcl.Nt
             # Assign energy-weights
             n_source_ptcls = ptcl.Nx * ptcl.Nmu * ptcl.Nt
             nrg = nrgscattered[icell] / n_source_ptcls
@@ -285,6 +401,9 @@ def run(n_particles, particle_prop, nrgdep, nrgscattered, current_time):
                 for mu in angles:
                     for ttt in emission_times:
                         if n_scattered_particles < ptcl.max_array_size:
+                            P = p_x_t_solve(mesh.dx, mesh_nodepos[icell], mesh_nodepos[icell + 1], xpos, ttt, current_time, current_time + time.dt, time.dt, X_s[icell], T_s[icell])
+                            P_tally[icell] += P
+                            
                             idx = n_scattered_particles
                             scattered_particles[idx, 0] = icell  # origin
                             scattered_particles[idx, 1] = ttt  # time
@@ -292,13 +411,25 @@ def run(n_particles, particle_prop, nrgdep, nrgscattered, current_time):
                             scattered_particles[idx, 3] = xpos  # position
                             scattered_particles[idx, 4] = mu  # direction
                             scattered_particles[idx, 5] = nrg  # energy
-                            scattered_particles[idx, 6] = startnrg  # start energy
+                            scattered_particles[idx, 6] = P  # start energy
                             n_scattered_particles += 1
                         else:
                             print("Warning: Maximum number of scattered particles reached!")
 
-        # Reset mesh.nrgscattered
+        # Put correct energy
+        for i in range(n_scattered_particles):
+            # Get P and icell
+            icell = int(scattered_particles[i, 2])
+            P = scattered_particles[i, 6]
+            # Set particle energy
+            nrg = nrgscattered[icell] * P / P_tally[icell]
+            # Set particle startnrg
+            scattered_particles[idx, 6] = nrg  # start energy
 
+        # Reset nrgscattered
+        nrgscattered[:] = 0.0
+        xEs[:] = 0.0
+        tEs[:] = 0.0
         # Loop over scattered particles
         for iptcl in range(n_scattered_particles):
             
@@ -336,9 +467,16 @@ def run(n_particles, particle_prop, nrgdep, nrgscattered, current_time):
                 nrgscattered[icell] += nrg_change * frac_scattered
 
                 if newnrg == 0.0:
-                                # Flag particle for later destruction
-                                scattered_particles[iptcl, 5] = -1.0
-                                break
+                    # Flag particle for later destruction
+                    scattered_particles[iptcl, 5] = -1.0
+                    break
+
+                # Calculate the average length of scatter
+                average_scatter_length = 1 / mesh_sigma_t[icell] * (1 - (1 + mesh_sigma_t[icell] * dist) * np.exp(-mesh_sigma_t[icell] * dist))/(1 - np.exp(-mesh_sigma_t[icell] * dist))
+                average_position_of_scatter = xpos + mu * average_scatter_length
+                average_time_of_scatter = ttt + average_scatter_length / phys_c
+                xEs += nrg_change * frac_scattered * average_position_of_scatter
+                tEs += nrg_change * frac_scattered * average_time_of_scatter
                 # Advance position and time
                 xpos += mu * dist
                 ttt += dist * phys_invc
@@ -379,6 +517,8 @@ def run(n_particles, particle_prop, nrgdep, nrgscattered, current_time):
                     scattered_particles[iptcl, 5] = nrg
                     break
         
+        X_s = xEs[:] / nrgscattered[:]
+        T_s = tEs[:] / nrgscattered[:]
         iterations += 1
         # Now we need to move all the processed scattered particles to the global particle array
         # Calculate how many particles we are going to add

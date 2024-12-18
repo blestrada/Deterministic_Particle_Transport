@@ -27,7 +27,7 @@ mat_benchtwo = [[0.00242, 0.00242, 0.00242, 0.00242, 0.00235, 0.00121, 0.00003, 
 plt.figure(figsize=(7, 6))
 
 # Open the output file
-fname = open("SuOlson1997-case2.out", "rb")
+fname = open("SuOlson1997-case2-test2.out", "rb")
 
 # Times corresponding to data in the output file
 times = [r"$\tau$ = 0.1", r"$\tau$ = 1.0", r"$\tau$ = 10", r"$\tau$ = 100"]
@@ -69,7 +69,7 @@ fname.close()
 plt.figure(figsize=(7, 6))
 
 # Open the output file again to read the data for material energy density
-fname = open("SuOlson1997-case2.out", "rb")
+fname = open("SuOlson1997-case2-test2.out", "rb")
 
 # Loop to read and plot data from the output file for material
 for i in range(3):

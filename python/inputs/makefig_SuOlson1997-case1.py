@@ -37,7 +37,9 @@ times = [r"$\tau$ = 0.1", r"$\tau$ = 1.0", r"$\tau$ = 10", r"$\tau$ = 100"]
 # Loop to read and plot data from the output file
 colors = ['blue', 'crimson', 'purple', 'black']  # List of colors for each iteration
 
-for i in range(3):
+# Open the output file
+fname = open("SuOlson1997-case1-test2.out", "rb")
+for i in range(2):
     time_line = fname.readline().decode().strip()  # Read the time line
     
     xdata = pickle.load(fname)      # cellpos
@@ -74,7 +76,7 @@ plt.figure(figsize=(7, 6))
 fname = open("SuOlson1997-case1-test2.out", "rb")
 
 # Loop to read and plot data from the output file for material
-for i in range(3):
+for i in range(2):
     time_line = fname.readline().decode().strip()  # Read the time line again
     
     xdata = pickle.load(fname)      # cellpos

@@ -199,15 +199,24 @@ def SuOlson1997(output_file):
                         print("at actual time {:24.16f}".format(time.time))
                         
                         fname.write("Time = {:24.16f}\n".format(time.time).encode())
+                        
+                        # Debugging before dumping
+                        print("Dumping cellpos...")
+                        print(mesh.cellpos)
                         pickle.dump(mesh.cellpos, fname, 0)
+                        
+                        print("Dumping matnrgdens...")
+                        print(mesh.matnrgdens)
                         pickle.dump(mesh.matnrgdens, fname, 0)
+                        
+                        print("Dumping radnrgdens...")
+                        print(mesh.radnrgdens)
                         pickle.dump(mesh.radnrgdens, fname, 0)
                         plottimenext = plottimenext + 1
     except KeyboardInterrupt:
         print("Calculation interrupted. Saving data...")
     finally:
         print("Data saved successfully.")
-
 
 
 def marshak_wave(output_file):
