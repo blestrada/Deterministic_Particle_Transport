@@ -103,7 +103,6 @@ def p_x_t_solve(dx, x_0, x_1, x, t, t_0, t_1, dt, X_s, T_s):
     return P
 
 
-
 def run_random():
     """Advance particles over a time-step"""
     # Create local storage for the energy deposited this time-step
