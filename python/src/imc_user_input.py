@@ -114,7 +114,7 @@ def echo():
     print()
 
     print("mesh.ncells  {:5d}".format(mesh.ncells))
-    print("mesh.xsize   {:5.1f}".format(mesh.xsize))
+    print(f'mesh.xsize   mesh.xsize')
     print(f'mesh.temp0    {mesh.temp0}')
 
     print("mat.sigma_a  {:5.3f}".format(mat.sigma_a))

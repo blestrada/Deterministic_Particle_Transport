@@ -57,5 +57,5 @@ def echo():
     """
     print("Mesh:")
     print(f'mesh.ncells = {mesh.ncells}, mesh.xsize = {mesh.xsize}, mesh.dx = {mesh.dx}')
-    print(f'mesh.cellpos = {mesh.cellpos[:10]}')
-    print(f'mesh.nodepos = {mesh.nodepos[:10]}')
+    print(f'mesh.cellpos = {mesh.cellpos[:11]}')
+    print(f'mesh.nodepos = {mesh.nodepos[:12]}')
