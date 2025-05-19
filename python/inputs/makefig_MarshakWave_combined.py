@@ -40,7 +40,7 @@ plt.close()
 
 
 # Open the output file
-fname = open("MarshakWave_1.out", "rb")
+fname = open("MarshakWave.out", "rb")
 
 # Times corresponding to data in the output file
 times = [r"$t$ = 0.3 sh"]
@@ -58,7 +58,7 @@ plt.xlabel("x - cm")
 plt.ylabel("Tm - keV")
 plt.ylim(0.0, 1.1)
 plt.legend(loc='upper right', numpoints=1, frameon=True)
-plt.savefig("marshak_wave-mat-temp-DPT-case1.png", bbox_inches="tight", dpi=900)
+plt.savefig("marshak_wave-mat-temp-combined.png", bbox_inches="tight", dpi=900)
 plt.close()
 
 # Create figure for the radiation energy density for DPT
@@ -67,7 +67,7 @@ plt.plot(xdata, (temp / 0.013720169037741436) ** (1/4), '-' , color='red', label
 plt.xlabel("x - cm")
 plt.ylabel(r"Radiation Energy Density - $\frac{jrk}{cm^3}$")
 plt.legend(loc='upper right', numpoints=1, frameon=True)
-plt.savefig("marshak_wave-radnrgdens-DPT-case1.png", bbox_inches="tight", dpi=900)
+plt.savefig("marshak_wave-radnrgdens-combined.png", bbox_inches="tight", dpi=900)
 plt.close()
 # Close the file
 fname.close()

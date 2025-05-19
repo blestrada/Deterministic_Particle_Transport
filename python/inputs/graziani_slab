@@ -1,0 +1,16 @@
+problem_type    graziani_slab
+dt              1e-13
+xsize           0.023157895
+dx              0.0021052632
+cycles          14
+Nx              1
+Nmu             4
+Nt              200
+Ng              50
+left_bc         reflecting
+right_bc        reflecting
+temp0           0.03
+radtemp0        0.03
+n_max           2000000
+mode            nrn
+scattering      implicit
