@@ -27,7 +27,7 @@ mat_benchtwo = [[0.00242, 0.00242, 0.00242, 0.00242, 0.00235, 0.00121, 0.00003, 
 plt.figure(figsize=(7, 6))
 
 # Open the output file
-fname = open("SuOlson1997-case2-test2.out", "rb")
+fname = open("SuOlson1997-case2.out", "rb")
 
 # Times corresponding to data in the output file
 times = [r"$\tau$ = 0.1", r"$\tau$ = 1.0", r"$\tau$ = 10", r"$\tau$ = 100"]
@@ -43,12 +43,12 @@ for i in range(3):
     radnrgdens = pickle.load(fname) # radiation energy density
 
     # Plot the radiation energy density data
-    plt.plot(xdata, radnrgdens, color=colors[i], marker='o', label=f"Radiation at {times[i]} (DPT)", linewidth=2, markersize='5')
+    plt.plot(xdata, radnrgdens, color=colors[i], marker='x', label=f"Radiation at {times[i]} (DPT)", linewidth=0.6, markersize='5')
 
 # Now plot benchmark data 
-plt.plot(x_bench, rad_benchtwo[0], 'x--', label=r'Radiation at $\tau$ = 0.1 (Benchmark)', linewidth=1, color='orange')  
-plt.plot(x_bench, rad_benchtwo[2], 'x--', label=r'Radiation at $\tau$ = 1.0 (Benchmark)', linewidth=1, color='teal')
-plt.plot(x_bench, rad_benchtwo[4], 'x--', label=r'Radiation at $\tau$ = 10 (Benchmark)', linewidth=1, color='forestgreen')
+plt.plot(x_bench, rad_benchtwo[0], 'o--', label=r'Radiation at $\tau$ = 0.1 (Benchmark)', linewidth=0.6, color='orange', fillstyle='none')  
+plt.plot(x_bench, rad_benchtwo[2], 'o--', label=r'Radiation at $\tau$ = 1.0 (Benchmark)', linewidth=0.6, color='teal', fillstyle='none')
+plt.plot(x_bench, rad_benchtwo[4], 'o--', label=r'Radiation at $\tau$ = 10 (Benchmark)', linewidth=0.6, color='forestgreen', fillstyle='none')
 
 plt.xlim(0.0, 5.0)
 plt.ylim(0.0, 2.5)
@@ -69,7 +69,7 @@ fname.close()
 plt.figure(figsize=(7, 6))
 
 # Open the output file again to read the data for material energy density
-fname = open("SuOlson1997-case2-test2.out", "rb")
+fname = open("SuOlson1997-case2.out", "rb")
 
 # Loop to read and plot data from the output file for material
 for i in range(3):
@@ -80,13 +80,13 @@ for i in range(3):
     radnrgdens = pickle.load(fname) # radiation energy density
 
     # Plot the material energy density data
-    plt.plot(xdata, matnrgdens, color=colors[i], marker='o', label=f"Material at {times[i]} (DPT)", linewidth=2, markersize='5')
+    plt.plot(xdata, matnrgdens, color=colors[i], marker='x', label=f"Material at {times[i]} (DPT)", linewidth=0.6, markersize='5')
 
 # Now plot benchmark data for material
 # Uncomment if you want to add material benchmark data
-plt.plot(x_bench, mat_benchtwo[0], 'x--', label=r'Material at $\tau$ = 0.1 (Benchmark)', linewidth=1, color='orange')  
-plt.plot(x_bench, mat_benchtwo[2], 'x--', label=r'Material at $\tau$ = 1.0 (Benchmark)', linewidth=1, color='teal')  
-plt.plot(x_bench, mat_benchtwo[4], 'x--', label=r'Material at $\tau$ = 10 (Benchmark)', linewidth=1, color='forestgreen')  
+plt.plot(x_bench, mat_benchtwo[0], 'o--', label=r'Material at $\tau$ = 0.1 (Benchmark)', linewidth=0.6, color='orange', fillstyle='none')  
+plt.plot(x_bench, mat_benchtwo[2], 'o--', label=r'Material at $\tau$ = 1.0 (Benchmark)', linewidth=0.6, color='teal', fillstyle='none')  
+plt.plot(x_bench, mat_benchtwo[4], 'o--', label=r'Material at $\tau$ = 10 (Benchmark)', linewidth=0.6, color='green', fillstyle='none')  
 
 plt.xlim(0.01, 8.0)
 plt.ylim(1e-3, 1e2)

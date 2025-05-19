@@ -1,0 +1,15 @@
+problem_type    infinite_medium_one_cell
+dt              0.5
+xsize           1.0
+dx              1.0
+cycles          30
+ns              5
+sigma_a         1.0
+sigma_s         0.0
+left_bc         reflecting
+right_bc        reflecting
+temp0           0.01
+radtemp0        1.0
+n_max           2000000
+mode            rn
+scattering      analog
