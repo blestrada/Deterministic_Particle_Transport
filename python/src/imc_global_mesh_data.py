@@ -1,9 +1,10 @@
 """Global mesh data."""
 
 ncells = -1
+source_cells = 1
 xsize = -1.0
 dx = -1.0
-
+body_source = True
 # Cell arrays
 
 cellpos = -1.0
