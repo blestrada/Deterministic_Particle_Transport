@@ -518,7 +518,9 @@ def imc_get_energy_sources(radiation_source, body_source, surface_source, fleck,
 
 def imc_get_emission_probabilities(e_rad, e_surf, e_body, e_total):
     """Convert energy source terms to particle emission probabilities."""
-
+    print(f'e_body = {e_body}')
+    print(f'e_surf = {e_surf}')
+    print(f'e_rad = {e_rad}')
     # Initialize probabilities
     p_rad = np.zeros(10)  # Assuming 10 radiation source cells, update if different
     p_surf = 0.0
@@ -535,7 +537,7 @@ def imc_get_emission_probabilities(e_rad, e_surf, e_body, e_total):
         # Probability of emission from the body source
         if np.sum(e_body) > 0:
             p_body[:] = np.cumsum(e_body[:]) / np.sum(e_body[:])
-
+    print(f'p_rad = {p_rad}, p_surf = {p_surf}, p_body = {p_body}')
     return p_rad, p_surf, p_body
 
 
