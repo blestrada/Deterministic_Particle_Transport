@@ -351,7 +351,7 @@ def run(n_particles, particle_prop, current_time, dt, Nmu, mesh_sigma_a, mesh_si
                 break  # Finish history for this particle                    
     
     # Start implicit scattering process
-    epsilon = 1e-9
+    epsilon = 1e-5
     iterations = 0
     converged = False
 

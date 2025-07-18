@@ -4,6 +4,7 @@ import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import time as tm
 
 import imc_update
 import imc_source
@@ -19,6 +20,7 @@ import imc_global_part_data as part
 import imc_global_volsource_data as vol
 import imc_utilities as imc_util
 
+
 def SuOlson1997(output_file):
     """
     Control calculation for SuOlson1997 Volume Source problem.
@@ -30,7 +32,7 @@ def SuOlson1997(output_file):
     print(f'plottimes = {plottimes}')
     plottimenext = 0
 
-    animation = True
+    animation = False
     if animation:
         data = np.zeros((time.ns, mesh.ncells, 3))
 
@@ -47,7 +49,7 @@ def SuOlson1997(output_file):
     time.time = 0.0
 
     # Columns: [origin, emission_time, icell, xpos, mu, frq, nrg, startnrg]
-    part.max_array_size = 25_000_000
+    part.max_array_size = 2_000_000
     part.particle_prop = np.zeros((part.max_array_size, 8), dtype=np.float64)
     part.n_particles = np.zeros(1, dtype=int)
     # Set energy densities
@@ -60,17 +62,20 @@ def SuOlson1997(output_file):
 
     # Convert angle info into arrays
     if part.mode == 'nrn':
-        min_angles = 2
-        max_angles = 16
         part.Nmu = np.ones(mesh.ncells, dtype=int) * part.Nmu
-        # part.Nmu[0:100] = 8
-        # part.Nmu[101:] = 4
-        print(f'Nmu = {part.Nmu[:10]}')
-    # Now Nmu is an array of the number of angles to run in each cell.
+    timesteps = time.ns
+    ncells = mesh.ncells
+
+    all_times = np.zeros(timesteps)
+    all_radnrgdens = np.zeros((timesteps, ncells))
+    all_matnrgdens = np.zeros((timesteps, ncells))
+    runtimes = np.zeros(timesteps)
+    
     # Loop over timesteps
     try:
         with open(output_file, "wb") as fname:
             for time.step in range(1, time.ns + 1): # time.ns + 1
+                step_start_time = tm.perf_counter()  # Start timing
                 print(f'Step: {time.step} @ time = {time.time}')
 
                 # Update temperature dependent quantities
@@ -160,6 +165,12 @@ def SuOlson1997(output_file):
                 #         # plt.plot(part.Nmu)
                 #         # plt.show()
 
+                # Save data to NPZ per time step
+                step_idx = time.step - 1  # zero-based indexing
+                all_times[step_idx] = time.time
+                all_radnrgdens[step_idx, :] = mesh.radnrgdens
+                all_matnrgdens[step_idx, :] = mesh.matnrgdens
+                runtimes[step_idx] = tm.time() - step_start_time
 
                 # Plot
                 if plottimenext <= 3:
@@ -201,11 +212,17 @@ def SuOlson1997(output_file):
         print("Data saved successfully.")
     if animation:
         output_dir = "Su_Olson_animation"
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    output_file = os.path.join(output_dir, "simulation_data.npy")
-    np.save(output_file, data)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        output_file = os.path.join(output_dir, "simulation_data.npy")
+        np.save(output_file, data)
+    np.savez("Su_Olson_output.npz",
+         mesh_nodepos=mesh.cellpos,
+         time=all_times,
+         radnrgdens=all_radnrgdens,
+         matnrgdens=all_matnrgdens,
+         runtimes=runtimes)
+    
 
 
 def marshak_wave(output_file):
@@ -419,9 +436,15 @@ def infinite_medium_one_cell(output_file):
     temp_data = [mesh.temp[0]]
     radtemp_data = [mesh.radtemp[0]]
 
+    timesteps = time.ns
+    all_times = np.zeros(timesteps)
+    all_mat_temps = np.zeros(timesteps)
+    runtimes = np.zeros(timesteps)
+
     try:
         with open(output_file, "wb") as f:
             for time.step in range(1, time.ns + 1):
+                step_start_time = tm.perf_counter()  # Start timing
                 print(f'Step {time.step} @ time = {time.time}')
                 
                 # Create Census particles for first time-step
@@ -458,6 +481,11 @@ def infinite_medium_one_cell(output_file):
                 temp_data.append(np.float64(mesh.temp[0]))
                 radtemp_data.append(np.float64(mesh.radtemp[0]))
 
+                # Save data to NPZ per time step
+                step_idx = time.step - 1  # zero-based indexing
+                all_times[step_idx] = time.time
+                all_mat_temps[step_idx] = mesh.temp
+                runtimes[step_idx] = tm.time() - step_start_time
             # After loop ends, save the data to the output file
             pickle.dump(time_data, f)
             pickle.dump(temp_data, f)
@@ -467,7 +495,10 @@ def infinite_medium_one_cell(output_file):
         print(f'Calculation interrupted. Saving data...')
     finally:
         print(f'Data saved successfully.')
-
+    np.savez("Mosher_output.npz",
+         time=all_times,
+         mat_temps=all_mat_temps,
+         runtimes=runtimes)
     # Plotting after the loop finishes
     plt.figure()
     plt.axhline(T_eq, color='k', linestyle='--', label='Equilibrium Temperature')
