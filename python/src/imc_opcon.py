@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import time as tm
+import pandas as pd
 
 import imc_update
 import imc_source
@@ -223,7 +224,6 @@ def SuOlson1997(output_file):
          matnrgdens=all_matnrgdens,
          runtimes=runtimes)
     
-
 
 def marshak_wave(output_file):
     """
@@ -641,3 +641,314 @@ def graziani_slab(output_file):
         print("Calculation interrupted. Saving data...")
     finally:
         print("Data saved successfully.")
+
+
+def crooked_pipe(output_file):
+    """Crooked Pipe 2D R-Z Problem"""
+    # Physical Properties of Crooked Pipe Problem
+    # density (g/cc) = 0.01 [thin] and 10.0 [thick]
+    # opacity (cm^2/g) = 20.0 [thin] and 20.0 [thick]
+    # initial temperature (keV) = 0.05 [thin] and 0.05 [thick]
+    # ion specific heat (1.e15 ergs/g-keV)
+
+
+    # Set Physical Constants
+    phys.c = 2.99792458e2  # [cm/sh] 
+    phys.a = 1.3720e14  # erg/(cm^3-keV^4)
+    phys.sb = phys.a * phys.c / 4 # erg / (cm2 − sh −keV4)
+    phys.invc = 1.0 / phys.c
+    print(f'Physical constants: phys.c = {phys.c} [cm/sh], phys.a = {phys.a} [erg/(cm^3-keV^4)], phys.sb = {phys.sb} [erg/(cm2 − sh −keV4)]')
+    
+    print(f'mesh.dx = {mesh.dx}')
+    print(f'mesh.dy = {mesh.dy}')
+    # Initialize Opacities, temperatures, fleck factor
+    num_x_idx = len(mesh.x_edges) - 1
+    num_y_idx = len(mesh.y_edges) - 1
+    # generate a mask to assign opacities to the thin and thick parts of the mesh
+
+    mesh.temp = np.full((num_x_idx, num_y_idx), 0.05) # 0.05 keV initial temperature everywhere
+    mesh.fleck = np.full((num_x_idx, num_y_idx), 0.0)
+    mesh.radtemp = np.full((num_x_idx, num_y_idx), 0.0)
+
+    thin_density = 0.01 # [g/cm^3]
+    thick_density = 10.0 # [g/cm^3]
+
+    thin_mass_opacity = 2.0 #[cm^2/g]
+    thick_mass_opacity = 2.0 # [cm^2/g]
+
+    thin_opacity = thin_mass_opacity * thin_density # [1/cm]
+    print(f'thin_opacity = {thin_opacity} [1/cm]')
+    thick_opacity = thick_mass_opacity * thick_density # [1/cm]
+    print(f'thick_opacity = {thick_opacity} [1/cm]')
+    mat.rho = np.full((num_x_idx, num_y_idx), thick_density)  # Start with thick
+    mesh.sigma_a = np.full((num_x_idx, num_y_idx), thick_opacity)
+
+    # Convert sourcing info into arrays
+    if part.mode == 'nrn':
+        part.Nmu = np.full((num_x_idx, num_y_idx), part.Nmu)
+        part.Nx = np.full((num_x_idx, num_y_idx), 1)
+        part.Ny = np.full((num_x_idx, num_y_idx), 1)
+        part.Nt = np.full((num_x_idx, num_y_idx), 1)
+    cell_Nt = 1
+    cell_Nx = 1
+    cell_Ny = 1
+    cell_Nmu = 12
+    # Assign thin densities to the thin regions
+    # Loop over each cell (i = x index, j = y index)
+    for i in range(num_x_idx):
+        for j in range(num_y_idx):
+            x_left   = mesh.x_edges[i]
+            x_right  = mesh.x_edges[i+1]
+            y_bot    = mesh.y_edges[j]
+            y_top    = mesh.y_edges[j+1]
+
+            # Region 1: Bottom left
+            if x_right <= 2.5 and y_top <= 0.5:
+                mat.rho[i, j] = thin_density
+                mesh.sigma_a[i,j] = thin_opacity
+                if part.mode == 'nrn':
+                    part.Nmu[i,j] = cell_Nmu
+                    part.Nx[i,j] = cell_Nx
+                    part.Ny[i,j] = cell_Ny
+                    part.Nt[i,j] = cell_Nt
+
+            # Region 2: Vertical left gap
+            if 2.5 <= x_left <= 3.0 and y_top <= 1.5:
+                mat.rho[i, j] = thin_density
+                mesh.sigma_a[i,j] = thin_opacity
+                if part.mode == 'nrn':
+                    part.Nmu[i,j] = cell_Nmu
+                    part.Nx[i,j] = cell_Nx
+                    part.Ny[i,j] = cell_Ny
+                    part.Nt[i,j] = cell_Nt
+
+            # Region 3: Horizontal middle strip
+            if 3.0 <= x_left <= 4.0 and (y_bot < 1.5 and y_top >= 1.00):
+                mat.rho[i, j] = thin_density
+                mesh.sigma_a[i,j] = thin_opacity
+                if part.mode == 'nrn':
+                    part.Nmu[i,j] = cell_Nmu
+                    part.Nx[i,j] = cell_Nx
+                    part.Ny[i,j] = cell_Ny
+                    part.Nt[i,j] = cell_Nt
+
+            # Region 4: Vertical right gap
+            if 4.0 <= x_left <= 4.5 and y_top <= 1.5:
+                mat.rho[i, j] = thin_density
+                mesh.sigma_a[i,j] = thin_opacity
+                if part.mode == 'nrn':
+                    part.Nmu[i,j] = cell_Nmu
+                    part.Nx[i,j] = cell_Nx
+                    part.Ny[i,j] = cell_Ny
+                    part.Nt[i,j] = cell_Nt
+
+            # Region 5: Bottom right
+            if x_left >= 4.5 and y_top <= 0.5:
+                mat.rho[i, j] = thin_density
+                mesh.sigma_a[i,j] = thin_opacity
+                if part.mode == 'nrn':
+                    part.Nmu[i,j] = cell_Nmu
+                    part.Nx[i,j] = cell_Nx
+                    part.Ny[i,j] = cell_Ny
+                    part.Nt[i,j] = cell_Nt
+    mesh.thin_cells = (mesh.sigma_a == thin_opacity)
+    # mesh.thin_cells = np.argwhere(mesh.sigma_a == thin_opacity)
+    mesh.thick_cells = (mesh.sigma_a == thick_opacity)
+    print(f'mesh.thick_cells = {mesh.thick_cells}')
+    
+    mesh.sigma_s = np.full((num_x_idx, num_y_idx), 0.0)
+    mesh.sigma_t = np.copy(mesh.sigma_a)
+    print(f'mesh.sigma_a = {mesh.sigma_a}')
+    print(f'mesh.sigma_s = {mesh.sigma_s}')
+    print(f'mesh.sigma_t = {mesh.sigma_t}')
+    print(f'shape of mesh.sigma_t = {mesh.sigma_t.shape}')
+    mat.b = np.full((num_x_idx, num_y_idx), 1.e15)         # ion specific heat [ergs/gm-keV]
+    mat.b = mat.b * mat.rho  # converted to [ergs/cm^3-keV]
+    mat.b[mesh.thick_cells] *= 2.0
+    mat.b[mesh.thin_cells] *= 1.0
+
+    print(f'mat.b = {mat.b}')
+    # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, frq, nrg, startnrg]
+    part.max_array_size = 20_000_000
+    part.particle_prop = np.zeros((part.max_array_size, 9), dtype=np.float64)
+    part.n_particles = 0
+
+
+    # Set start time and time-step
+    time.time = 0.0
+    time.dt = 0.01    # shakes
+    time.dt_max = 1.0  # shakes
+    t_final = 50.0
+    time.dt_rampfactor = 1
+    part.surface_Nmu = 10
+    part.surface_Ny = 20
+    part.surface_Nt = 5
+    bcon.T0 = 0.3 # keV
+    part.n_input = 52000
+    # Loop over timesteps
+    records = []
+    try:
+        with open(output_file, "wb") as fname:
+            while time.time < t_final: # time.ns + 1
+                # step_start_time = tm.perf_counter()  # Start timing
+                print(f'Step: {time.step} @ time = {time.time}')
+                print(f"time.dt = {time.dt}")
+
+                # Update temperature dependent quantities
+                mesh.fleck = imc_update.crooked_pipe_update(mesh.sigma_a, mesh.temp, time.dt)
+                # plt.figure()
+                # pc = plt.pcolormesh(mesh.x_edges,
+                #                     mesh.y_edges,
+                #                     mesh.fleck.T,  # Transpose to match orientation
+                #                     cmap='turbo',
+                #                     edgecolors='k',       # 'k' for black borders around cells
+                #                     linewidth=0.5,
+                #                     shading='flat')        
+                # plt.colorbar(pc, label=f'Fleck factor')
+                # plt.clim(vmin=0.00, vmax=1.0)
+                # plt.xlabel('x')
+                # plt.ylabel('y')
+                # plt.title(f'Fleck factor at t={time.time}')
+                # plt.axis('equal')
+                # plt.grid(True, linestyle='--', linewidth=0.5, color='white')
+                # plt.show()
+                
+                print(f'mesh.fleck = {mesh.fleck}')
+                if part.mode == 'nrn':
+                    # Source new surface particles
+                    # print(f'surface_Ny = {part.surface_Ny}, surface_Nmu = {part.surface_Nmu}')
+                    part.n_particles, part.particle_prop = imc_source.crooked_pipe_surface_particles(part.n_particles, part.particle_prop, part.surface_Ny, part.surface_Nmu, part.surface_Nt, time.time, time.dt, mesh.y_edges)
+                    # Source new body source particles
+                    part.n_particles, part.particle_prop = imc_source.crooked_pipe_body_particles(part.n_particles, part.particle_prop, time.time, time.dt, mesh.y_edges, mesh.x_edges, mesh.temp, mesh.dx, mesh.dy, mesh.fleck, mesh.sigma_a)
+                elif part.mode == 'rn':
+                    part.n_particles, part.particle_prop = imc_source.run2D(mesh.fleck, mesh.temp, mesh.sigma_a, part.particle_prop, part.n_particles, time.time, time.dt, mesh.dx, mesh.dy, mesh.x_edges, mesh.y_edges)
+                
+                # Check for energies
+                negative_energy_indices = np.where(part.particle_prop[:part.n_particles, 7] < 0.0)[0]
+                if negative_energy_indices.size > 0:
+                    raise RuntimeError(
+                        f"Found {negative_energy_indices.size} particles with negative energy after sourcing! "
+                        f"Indices: {negative_energy_indices}"
+                    )
+
+                # Advance particles through transport
+                if part.mode == 'nrn':  
+                    mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run_crooked_pipe(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mesh.thin_cells)
+                elif part.mode == 'rn':
+                    mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run2D(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck)
+                # print(f'mesh.nrgdep = {mesh.nrgdep}')
+
+                # Clean up particles that had their energy set to -1.0
+                part.n_particles, part.particle_prop = imc_track.clean2D(part.n_particles, part.particle_prop)
+                
+                # Check for energies
+                negative_energy_indices = np.where(part.particle_prop[:part.n_particles, 7] < 0.0)[0]
+                if negative_energy_indices.size > 0:
+                    raise RuntimeError(
+                        f"Found {negative_energy_indices.size} particles with negative energy after cleaning! "
+                        f"Indices: {negative_energy_indices}"
+                    )
+                
+                # Tally
+                mesh.temp, mesh.radtemp = imc_tally.crooked_pipe_tally(mesh.nrgdep, mesh.dx, mesh.dy, part.n_particles, part.particle_prop, mesh.temp, mesh.sigma_a, mesh.fleck, time.dt)
+                print(f'mesh.temp = {mesh.temp}')
+                print(f'mesh.radtemp = {mesh.radtemp}')
+                if np.any(mesh.temp < 0.0):
+                    raise RuntimeError(f"Negative material temp detected! min(mesh.temp) = {np.min(mesh.temp)}")
+                if np.any(mesh.radtemp < 0.0):
+                    raise RuntimeError(f"Negative rad temp! min(mesh.radtemp) = {np.min(mesh.radtemp)}")
+                nx, ny = mesh.temp.shape
+                for j in range(ny):
+                    for i in range(nx):
+                        records.append({
+                            "time": time.time,
+                            "x_idx": i,
+                            "y_idx": j,
+                            "temp": mesh.temp[i, j]
+                        })
+                # Update time
+                time.time = round(time.time + time.dt, 8)
+                time.step += 1
+                # Make a larger time-step
+                if time.dt < time.dt_max:
+                    # Increase time-step
+                    time.dt = time.dt * time.dt_rampfactor
+
+                # Check for final time-step
+                if time.time + time.dt > t_final:
+                    time.dt = t_final - time.time
+        df = pd.DataFrame(records)
+        df.to_csv("temperature_history.csv", index=False)
+        print("Temperature history saved to temperature_history.csv")
+        plt.figure()
+        pc = plt.pcolormesh(mesh.x_edges,
+                            mesh.y_edges,
+                            mesh.temp.T,  # Transpose to match orientation
+                            cmap='inferno',
+                            edgecolors='k',       # 'k' for black borders around cells
+                            linewidth=0.5,
+                            shading='flat')        
+        plt.colorbar(pc, label=f'Temperature [keV]')
+        plt.clim(vmin=0.05, vmax=0.3)
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.title(f'Temperature at t={time.time}')
+        plt.axis('equal')
+        plt.grid(True, linestyle='--', linewidth=0.5, color='white')
+        plt.show()
+        plt.figure()
+        pc = plt.pcolormesh(mesh.x_edges,
+                            mesh.y_edges,
+                            mesh.radtemp.T,  # Transpose to match orientation
+                            cmap='inferno',
+                            edgecolors='k',       # 'k' for black borders around cells
+                            linewidth=0.5,
+                            shading='flat')        
+        plt.colorbar(pc, label=f'Temperature [keV]')
+        plt.clim(vmin=0.05, vmax=0.3)
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.title(f'Radiation Temperature at t={time.time}')
+        plt.axis('equal')
+        plt.grid(True, linestyle='--', linewidth=0.5, color='white')
+        plt.show()          
+                
+    
+    except KeyboardInterrupt:
+        print("Calculation interrupted. Saving data...")
+        plt.figure()
+        pc = plt.pcolormesh(mesh.x_edges,
+                            mesh.y_edges,
+                            mesh.temp.T,  # Transpose to match orientation
+                            cmap='inferno',
+                            edgecolors='k',       # 'k' for black borders around cells
+                            linewidth=0.5,
+                            shading='flat')        
+        plt.colorbar(pc, label=f'Temperature [keV]')
+        plt.clim(vmin=0.05, vmax=0.3)
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.title(f'Temperature at t={time.time}')
+        plt.axis('equal')
+        plt.grid(True, linestyle='--', linewidth=0.5, color='white')
+        plt.show()
+        plt.figure()
+        pc = plt.pcolormesh(mesh.x_edges,
+                            mesh.y_edges,
+                            mesh.radtemp.T,  # Transpose to match orientation
+                            cmap='inferno',
+                            edgecolors='k',       # 'k' for black borders around cells
+                            linewidth=0.5,
+                            shading='flat')        
+        plt.colorbar(pc, label=f'Temperature [keV]')
+        plt.clim(vmin=0.05, vmax=0.3)
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.title(f'Radiation Temperature at t={time.time}')
+        plt.axis('equal')
+        plt.grid(True, linestyle='--', linewidth=0.5, color='white')
+        plt.show()
+    finally:
+        print("Data saved successfully.")
+        
+    

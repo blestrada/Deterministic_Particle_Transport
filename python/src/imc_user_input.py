@@ -1,6 +1,7 @@
 """Read user input deck"""
 
 import numpy as np
+import ast
 
 import imc_global_mesh_data as mesh
 import imc_global_mat_data as mat
@@ -33,7 +34,32 @@ def read(input_file):
             keyw = fields[0].lower()
             keyv = fields[1].strip()
 
-            if keyw == "dt":
+
+            if keyw == "spatial_dims":
+                mesh.num_spatial_dim = int(keyv)  
+
+            elif keyw == "surface_ny":
+                part.surface_Ny = int(keyv)
+
+            elif keyw == "ny":
+                part.Ny = int(keyv)
+
+            elif keyw == "surface_Nmu":
+                part.surface_Nmu = int(keyv)
+
+            elif keyw == "x_edges":
+                try:
+                    mesh.x_edges = ast.literal_eval(keyv)
+                except Exception as e:
+                    print(f"Failed to parse x_edges: {e}")
+
+            elif keyw == "y_edges":
+                try:
+                    mesh.y_edges = ast.literal_eval(keyv)
+                except Exception as e:
+                    print(f"Failed to parse y_edges: {e}")
+
+            elif keyw == "dt":
                 time.dt = float(keyv)
             
             elif keyw == "xsize":

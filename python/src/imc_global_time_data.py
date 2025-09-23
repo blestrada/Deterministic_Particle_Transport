@@ -7,3 +7,7 @@ time = -1.0
 step = 1
 
 ns = -1
+
+dt_max = None
+
+dt_rampfactor = None

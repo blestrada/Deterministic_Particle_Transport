@@ -149,3 +149,38 @@ def general_tally(nrgdep, n_particles, particle_prop, temp):
     radtemp = (radnrgdens / phys.a) ** (1/4)
 
     return temp, radtemp
+
+
+def crooked_pipe_tally(nrgdep, mesh_dx, mesh_dy, n_particles, particle_prop, temp, mesh_sigma_a, mesh_fleck, dt):
+    num_x_cells = len(mesh_dx)
+    num_y_cells = len(mesh_dy)
+
+    # 2D area array
+    area = np.outer(mesh_dx, mesh_dy)  # shape: (num_x_cells, num_y_cells)
+
+    # Start of step radiation energy density
+    radenergydens = phys.a * temp ** 4  # keV/cm^3
+    if np.any(nrgdep < 0.0):
+        raise RuntimeError(f"Negative energy deposited detected! min(nrgdep) = {np.min(nrgdep)}")
+    
+    # Energy increase per cell
+    nrg_inc = (nrgdep / area) - (mesh_sigma_a * mesh_fleck * radenergydens * phys.c * dt)
+
+    # Material temperature update
+    temp = temp + nrg_inc / mat.b
+    if np.any(temp < 0.0):
+        raise RuntimeError(f"Negative temperature detected! min(temp) = {np.min(temp)}")
+    
+    # Calculate the radiation temperature
+    radnrgdens = np.zeros((num_x_cells, num_y_cells))
+    for i in range(n_particles):
+        particle = particle_prop[i]
+        nrg = particle[7]
+        if nrg >= 0.0:
+            x_cell_index = int(particle[1])
+            y_cell_index = int(particle[2])
+            radnrgdens[x_cell_index, y_cell_index] += nrg / (mesh_dx[x_cell_index] * mesh_dy[y_cell_index])  # Update the energy density in the corresponding cell
+
+    radtemp = (radnrgdens / phys.a) ** (1/4)
+    
+    return temp, radtemp

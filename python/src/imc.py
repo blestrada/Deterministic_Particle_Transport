@@ -5,7 +5,7 @@ import logging
 import time as pytime
 
 import imc_global_part_data as part
-
+import imc_global_mesh_data as mesh
 import imc_mesh
 import imc_opcon
 import imc_user_input
@@ -50,13 +50,12 @@ def main(input_file, output_file, debug_mode):
     """
     tm0 = pytime.perf_counter()
 
-    logger = setup_logger()
-
     imc_user_input.read(input_file)
-    imc_user_input.echo()
-
-    imc_mesh.make()
-    imc_mesh.echo()
+    if mesh.num_spatial_dim == 1:
+        imc_mesh.make1D()
+        imc_mesh.echo()
+    elif mesh.num_spatial_dim == 2:
+        mesh.x_edges, mesh.y_edges, mesh.dx, mesh.dy, mesh.x_cellcenters, mesh.y_cellcenters = imc_mesh.make_2D(mesh.x_edges, mesh.y_edges)
 
      
     # Dynamically call the function based on the string stored in part.problem_type

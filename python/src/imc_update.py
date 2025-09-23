@@ -50,6 +50,24 @@ def marshak_wave_update(temp, dt):
     # print(f'mesh.sigma_t = {mesh.sigma_t[:10]}')
     return beta, sigma_a, sigma_t, fleck
 
+
+def crooked_pipe_update(mesh_sigma_a, temp, dt):
+    # Calculate beta
+    beta = 4 * phys.a * temp ** 3 / (mat.b) # unitless
+
+    # Update the Fleck factor
+    fleck = 1.0 / (1.0 + beta * mesh_sigma_a * phys.c * dt)
+    
+    # Check that Fleck is physically valid
+    if np.any(fleck < 0.0) or np.any(fleck > 1.0):
+        raise RuntimeError(
+            f"Invalid Fleck factor detected! "
+            f"min = {np.min(fleck)}, max = {np.max(fleck)}"
+        )
+
+    return fleck
+
+
 @njit
 def population_control(n_particles, particle_prop, current_time, Nmu):
     """Reduces the number of particles and consolidates energy in the census grid."""

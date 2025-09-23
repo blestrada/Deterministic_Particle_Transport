@@ -1,13 +1,22 @@
 """Global mesh data."""
 
+num_spatial_dim = None
 ncells = -1
 source_cells = 1
 xsize = -1.0
 dx = -1.0
+dy = -1.0
 body_source = True
+x_edges = None
+y_edges = None
+
 # Cell arrays
 
+thin_cells = None
+thick_cells = None
 cellpos = -1.0
+x_cellcenters = -1.0
+y_cellcenters = -1.0
 temp = -1.0
 temp0 = -1.0
 radtemp = -1.0

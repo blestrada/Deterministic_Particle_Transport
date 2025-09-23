@@ -688,3 +688,282 @@ def run(fleck, temp, sigma_a, particle_prop, n_particles, current_time, dt):
     print("Number of particles in the system = {:12d}".format(n_particles[0]))
 
     return n_particles, particle_prop
+
+
+def imc_get_energy_sources_2D(body_source, surface_source, fleck, temp, dt, sigma_a, mesh_dx, mesh_dy):
+    """Get energy source terms"""
+
+    # Body source term
+    if body_source:
+        e_body = np.zeros((len(mesh_dx), len(mesh_dy)))
+        for i, dx in enumerate(mesh_dx):
+            for j, dy in enumerate(mesh_dy):
+                e_body[i, j] = (
+                    fleck[i, j]
+                    * sigma_a[i, j]
+                    * phys.a
+                    * phys.c
+                    * temp[i, j] ** 4
+                    * dx
+                    * dy
+                    * dt
+                )
+    else:
+        e_body = np.zeros((len(mesh_dx), len(mesh_dy)))
+
+    e_surf = 0.0
+    if surface_source:
+        surface_length = 0.5
+        e_surf = phys.sb * bcon.T0 ** 4 * dt * surface_length
+
+    # Total energy emitted
+    e_total = e_surf + np.sum(e_body)
+    print("\nEnergy radiated in timestep:")
+    print(f'Energy emitted by body-source: {np.sum(e_body)}')
+    print(f'Energy emitted by surface source: {e_surf}')
+    print("Total energy emitted: {:24.16E}".format(e_total))
+    return e_surf, e_body, e_total
+
+def imc_get_emission_probabilities2D(e_surf, e_body, e_total):
+    """Convert energy source terms into particle emission probabilities"""
+    # Initialize probabilities
+    p_surf = 0.0
+    p_body = np.zeros_like(e_body)
+
+    if e_total > 0.0:
+        # Probability of emission from the surface source
+        p_surf = e_surf / e_total
+
+        # Probability of emission from each cell in the body source
+        if np.sum(e_body) > 0.0:
+            p_body = e_body / e_total
+    print(f'p_surf = {p_surf}')
+    print(f'p_body (sum) = {np.sum(p_body)}')
+    return p_surf, p_body
+
+
+def imc_get_source_particle_numbers2D(p_surf, p_body):
+    """Calculate the number of source particles to create from the surface and body"""
+    n_input = part.n_input
+    print(f'User requested {part.n_input} particles per time-step')
+
+    # initialize counts for each source type
+    n_surf = 0
+    n_body = np.zeros_like(p_body, dtype=int)
+
+    # --- Step 1: Ensure at least 1 particle for each source ---
+    if p_surf > 0.0:
+        n_surf = 1
+    n_body[p_body > 0.0] = 1
+
+    # Subtract allocated particles from budget
+    allocated = n_surf + np.sum(n_body)
+    remaining = n_input - allocated
+    if remaining < 0:
+        raise ValueError("Requested too few particles to satisfy minimum allocation.")
+
+    # --- Step 2: Sample the remaining particles ---
+    body_flat = p_body.flatten()
+    body_cum = np.cumsum(body_flat)
+    if body_cum[-1] > 0.0:
+        body_cum /= body_cum[-1]
+
+    for _ in range(remaining):
+        eta = np.random.rand()
+        if eta <= p_surf:
+            n_surf += 1
+        else:
+            eta_body = (eta - p_surf) / (1 - p_surf) if p_surf < 1.0 else 0.0
+            idx = np.searchsorted(body_cum, eta_body)
+            i, j = divmod(idx, p_body.shape[1])
+            n_body[i, j] += 1
+
+    # --- Step 3: Consistency check ---
+    total_particles = n_surf + np.sum(n_body)
+    if total_particles != n_input:
+        raise RuntimeError(
+            f"Particle allocation mismatch: expected {n_input}, got {total_particles}"
+        )
+
+    print("Surface source:", n_surf)
+    print("Body source (per cell):")
+    print(n_body)
+
+    return n_surf, n_body
+
+
+def imc_source_particles2D(
+    e_surf, n_surf, e_body, n_body, particle_prop, n_particles,
+    current_time, dt, mesh_x_edges, mesh_y_edges
+):
+    """For known energy distribution, create source particles and add to pre-allocated array.
+    
+    particle_prop format:
+    [emission_time, x_idx, y_idx, xpos, ypos, theta, frq, nrg, startnrg]
+    """
+    max_particles = part.max_array_size
+
+    # --- Surface source particles ---
+    if n_surf > 0 and e_surf > 0.0:
+        nrg = e_surf / float(n_surf)
+        startnrg = nrg
+        for _ in range(n_surf):
+            if n_particles >= max_particles:
+                raise RuntimeError("Maximum number of particles reached in surface source.")
+            xpos = 0.0
+            ypos = np.random.uniform(0, 0.5)  
+            # Cell indices
+            x_idx = np.searchsorted(mesh_x_edges, xpos) - 1
+            y_idx = np.searchsorted(mesh_y_edges, ypos) - 1
+            # Time, frequency, angle
+            ttt = current_time + np.random.uniform() * dt
+            frq = 0.0
+            theta = np.random.uniform(-0.5*np.pi, 0.5*np.pi)  # rightward hemisphere
+            # Store
+            particle_prop[n_particles] = [
+                ttt, x_idx, y_idx, xpos, ypos, theta, frq, nrg, startnrg
+            ]
+            n_particles += 1
+
+    # --- Body source particles ---
+    if np.sum(n_body) > 0 and np.sum(e_body) > 0.0:
+        for i in range(n_body.shape[0]):
+            for j in range(n_body.shape[1]):
+                if n_body[i, j] > 0:
+                    nrg = e_body[i, j] / float(n_body[i, j])
+                    startnrg = nrg
+                    for _ in range(n_body[i, j]):
+                        if n_particles >= max_particles:
+                            raise RuntimeError("Maximum number of particles reached in body source.")
+                        # Sample uniformly inside the cell
+                        xpos = np.random.uniform(mesh_x_edges[i], mesh_x_edges[i+1])
+                        ypos = np.random.uniform(mesh_y_edges[j], mesh_y_edges[j+1])
+                        # Indices
+                        x_idx, y_idx = i, j
+                        # Time, frequency, angle
+                        ttt = current_time + np.random.uniform() * dt
+                        frq = 0.0
+                        theta = np.random.uniform(0.0, 2.0*np.pi)  # isotropic
+                        # Store
+                        particle_prop[n_particles] = [
+                            ttt, x_idx, y_idx, xpos, ypos, theta, frq, nrg, startnrg
+                        ]
+                        n_particles += 1
+
+    return n_particles, particle_prop
+
+
+def run2D(fleck, temp, sigma_a, particle_prop, n_particles, current_time, dt, mesh_dx, mesh_dy, mesh_x_edges, mesh_y_edges):
+    print("\n" + "-" * 79)
+    print("Source step ({:4d})".format(time.step))
+    print("-" * 79)
+
+    # Get the energy source terms
+    e_surf, e_body, e_total = imc_get_energy_sources_2D(True, True, fleck, temp, dt, sigma_a, mesh_dx, mesh_dy)
+
+    # Get emission probabilities
+    p_surf, p_body = imc_get_emission_probabilities2D(e_surf, e_body, e_total)
+
+    # Determine number of source particles
+    n_surf, n_body = imc_get_source_particle_numbers2D(p_surf, p_body)
+
+    # Create particles
+    n_particles, particle_prop = imc_source_particles2D(e_surf, n_surf, e_body, n_body, particle_prop, n_particles, current_time, dt, mesh_x_edges, mesh_y_edges)
+
+    # Final particle count in system
+    print("Number of particles in the system after sourcing = {:12d}".format(n_particles))
+
+    return n_particles, particle_prop
+
+
+def crooked_pipe_surface_particles(n_particles, particle_prop, surface_Ny, surface_Nmu, surface_Nt, current_time, dt, mesh_y_edges):
+    """Creates surface source particles for the boundary condition"""
+    T_surf = 0.3  # keV
+    surface_length = 0.5 # cm
+    e_surf = phys.sb * (T_surf ** 4) * dt * surface_length # surface energy over dt
+
+    # The surface source ranges from y=0 to y=0.5 at x=0
+    y_values = 0.0 + ((np.arange(surface_Ny) + 0.5) / surface_Ny) * 0.5
+    # print(f'y_values = {y_values}')
+
+    xi = (np.arange(surface_Nmu) + 0.5) / surface_Nmu
+    angles = np.arcsin(2*xi - 1)   # θ in [-π/2, π/2], Lambertian
+    # print(f'angles = {angles}')
+
+    # Emission times evenly spaced over dt
+    emission_times = current_time + (np.arange(surface_Nt) + 0.5) * dt / surface_Nt
+
+    # Total number of source particles
+    n_source_ptcls = len(y_values) * len(emission_times) * len(angles)
+    print(f'Number of surface source particles = {n_source_ptcls}')
+
+    # Energy per particle
+    nrg = e_surf / n_source_ptcls
+
+    xpos = 0.0
+    x_idx = 0
+
+    for ypos in y_values:
+        # Find y_idx: the cell where y falls between mesh_y_edges[k] and mesh_y_edges[k+1]
+        y_idx = np.searchsorted(mesh_y_edges, ypos) - 1
+        if y_idx < 0 or y_idx >= len(mesh_y_edges) - 1:
+            raise ValueError(f"y={ypos} is outside mesh_y_edges range")
+
+        for theta in angles:
+            for ttt in emission_times:
+                if n_particles < part.max_array_size:
+                    startnrg = nrg
+                    # Assign: [emission_time, x_idx, y_idx, xpos, ypos, mu, frq, nrg, startnrg]
+                    particle_prop[n_particles] = [ttt, x_idx, y_idx, xpos, ypos, theta, 0, nrg, startnrg]
+                    n_particles += 1
+                else:
+                    print("Warning: Maximum number of particles reached!")
+                    return n_particles, particle_prop
+
+    return n_particles, particle_prop
+
+
+def crooked_pipe_body_particles(n_particles, particle_prop, current_time, dt, mesh_y_edges, mesh_x_edges, mesh_temp, mesh_dx, mesh_dy, mesh_fleck, mesh_sigma_a):
+    nx_cells = len(mesh_x_edges) - 1
+    ny_cells = len(mesh_y_edges) - 1
+
+    start_count = n_particles
+    for ix in range(nx_cells):
+        for iy in range(ny_cells):
+            
+            # Cell sizes
+            dy_cell = mesh_dy[iy]
+            dx_cell = mesh_dx[ix]
+
+            x_positions = mesh_x_edges[ix] + (np.arange(part.Nx[ix, iy]) + 0.5) * dx_cell / part.Nx[ix, iy]
+            y_positions = mesh_y_edges[iy] + (np.arange(part.Ny[ix, iy]) + 0.5) * dy_cell / part.Ny[ix, iy]
+
+            # Uniform angular spacing over [0, 2π)
+            nmu_cell = int(part.Nmu[ix, iy])
+            angles = (np.arange(nmu_cell) + 0.5) / nmu_cell * 2.0 * np.pi
+            # Emission time spacing
+            emission_times = current_time + (np.arange(part.Nt[ix, iy]) + 0.5) * dt / part.Nt[ix, iy]
+
+            # The number of source particles in the cell
+            n_source_ptcls = part.Nx[ix, iy] * part.Ny[ix, iy] * nmu_cell * part.Nt[ix, iy]
+
+            # Energy per particle
+            nrg = (phys.c * mesh_fleck[ix, iy] * mesh_sigma_a[ix, iy] *
+                   phys.a * (mesh_temp[ix, iy] ** 4) *
+                   dt * dx_cell * dy_cell / n_source_ptcls)
+            # print(f'starting source particle nrg = {nrg}')
+            startnrg = nrg
+
+            # Loop to create particles
+            for xpos in x_positions:
+                for ypos in y_positions:
+                    for theta in angles:
+                        for ttt in emission_times:
+                            if n_particles < part.max_array_size:
+                                # Assign: [emission_time, x_idx, y_idx, xpos, ypos, mu, frq, nrg, startnrg]
+                                particle_prop[n_particles] = [ttt, ix, iy, xpos, ypos, theta, 0, nrg, startnrg]
+                                n_particles += 1
+                            else:
+                                print("Warning: Maximum number of particles reached!")
+    print(f"Added {n_particles - start_count} body-source particles.")
+    return n_particles, particle_prop

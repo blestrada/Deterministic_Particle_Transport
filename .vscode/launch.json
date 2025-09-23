@@ -1,16 +1,16 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Current File with Arguments",
+            "name": "Run IMC Crooked Pipe",
             "type": "debugpy",
             "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal",
-            "args": "-i python/inputs/SuOlson -o python/inputs/debug.out"
+            "program": "${workspaceFolder}/python/src/imc.py",
+            "args": [
+                "-i", "${workspaceFolder}/python/inputs/crooked_pipe.txt",
+                "-o", "${workspaceFolder}/python/inputs/crooked_pipe.out.txt"
+            ],
+            "console": "integratedTerminal"
         }
     ]
 }

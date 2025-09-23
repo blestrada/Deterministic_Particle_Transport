@@ -1,10 +1,14 @@
 """Global particle data."""
 
 # Particle Parameters
-Nx = -1
-Nmu = -1
-Nt = -1
-Ng = -1
+Nx = None
+Ny = None
+Nmu = None
+Nt = None
+Ng = None
+surface_Ny = None
+surface_Nmu = None
+surface_Nt = None
 
 # Number of particles added per timestep (RN)
 n_input = -1
@@ -18,7 +22,7 @@ max_array_size = 6_000_000
 particle_prop = []
 scattered_particles = []
 
-# Census grid
+# Census grid 
 census_particles = []
 
 # Some parameters

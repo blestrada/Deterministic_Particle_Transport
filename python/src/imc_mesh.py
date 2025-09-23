@@ -1,12 +1,13 @@
 """Sets up mesh."""
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 import imc_global_mesh_data as mesh
 import imc_global_mat_data as mat
 
 
-def make():
+def make1D():
     """
     @brief   Sets up mesh.
 
@@ -46,6 +47,59 @@ def make():
     mesh.nrgscattered = np.zeros(mesh.ncells, dtype=np.float64)
 
     mesh.fleck = np.zeros(mesh.ncells) - 1.0 # Fleck factor
+
+
+def make_2D(x_edges, y_edges, plot_mesh=False):
+    """
+    @brief   Sets up mesh.
+
+    @details Sets up fixed spatial mesh.
+    @return  None
+
+    Mesh creation
+    =============
+
+    The overall problem size and number of mesh cells are specified as user
+    input, and the cell size ($dx$) is calculated from these.
+
+    Arrays of both the cell-centre and the cell-edge (node) positions are
+    created.
+
+    x_edges: ndarray
+    y_edges: ndarray
+    dx     : ndarray
+    dy     : ndarray
+    x_centers: ndarray
+    y_centers: ndarray
+    """
+    x_edges = np.asarray(x_edges)
+    y_edges = np.asarray(y_edges)
+
+    dx = np.diff(x_edges)
+    dy = np.diff(y_edges)
+
+    x_centers = 0.5 * (x_edges[:-1] + x_edges[1:])
+    y_centers = 0.5 * (y_edges[:-1] + y_edges[1:])
+    print(f'number of x(z) zones = {len(x_centers)}')
+    print(f'number of y(r) zones = {len(y_centers)}')
+    if plot_mesh == True:
+        fig, ax = plt.subplots()
+
+        # Grid lines
+        for x in x_edges:
+            ax.plot([x, x], [y_edges[0], y_edges[-1]], color='black', linewidth=1)
+        for y in y_edges:
+            ax.plot([x_edges[0], x_edges[-1]], [y, y], color='black', linewidth=1)
+
+        ax.set_aspect('equal')
+        ax.set_xlabel("x (cm)")
+        ax.set_ylabel("y (cm)")
+        ax.set_title("2D Mesh")
+        plt.grid(False)
+        plt.show()
+    
+    return x_edges, y_edges, dx, dy, x_centers, y_centers
+
 
 
 def echo():
