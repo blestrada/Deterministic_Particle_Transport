@@ -11,5 +11,6 @@ docs/html
 docs/latex
 docs/doxygen.log
 inputs/
+*.csv
 !inputs/.gitkeep
 .venv
