@@ -10,4 +10,6 @@
 docs/html
 docs/latex
 docs/doxygen.log
+inputs/
+!inputs/.gitkeep
 .venv
