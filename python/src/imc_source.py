@@ -881,7 +881,7 @@ def crooked_pipe_surface_particles(n_particles, particle_prop, surface_Ny, surfa
     T_surf = 0.3  # keV
     surface_length = 0.5 # cm
     e_surf = phys.sb * (T_surf ** 4) * dt * surface_length # surface energy over dt
-
+    print(f'Total energy emitted by the surface = {e_surf}')
     # The surface source ranges from y=0 to y=0.5 at x=0
     y_values = 0.0 + ((np.arange(surface_Ny) + 0.5) / surface_Ny) * 0.5
     # print(f'y_values = {y_values}')
@@ -966,4 +966,19 @@ def crooked_pipe_body_particles(n_particles, particle_prop, current_time, dt, me
                             else:
                                 print("Warning: Maximum number of particles reached!")
     print(f"Added {n_particles - start_count} body-source particles.")
+    
+    e_body = np.zeros((len(mesh_dx), len(mesh_dy)))
+    for i, dx in enumerate(mesh_dx):
+        for j, dy in enumerate(mesh_dy):
+            e_body[i, j] = (
+                mesh_fleck[i, j]
+                * mesh_sigma_a[i, j]
+                * phys.a
+                * phys.c
+                * mesh_temp[i, j] ** 4
+                * dx
+                * dy
+                * dt
+            )
+    print(f'Total energy emitted by body-source = {np.sum(e_body)}')
     return n_particles, particle_prop

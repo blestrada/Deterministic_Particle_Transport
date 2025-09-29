@@ -4,6 +4,7 @@ import numpy as np
 from numba import njit, jit, objmode
 from scipy.optimize import root
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 
 import imc_global_mat_data as mat
 import imc_global_mesh_data as mesh
@@ -737,8 +738,7 @@ def run2D(n_particles, particle_prop, current_time, dt, sigma_a, sigma_s, sigma_
             # Clamp tiny distances
             dist_bx = max(dist_bx, eps)
             dist_by = max(dist_by, eps)
-
-            # Minimum distance to boundary
+            
             dist_b = min(dist_bx, dist_by)
             # Calculate distance to census
             dist_cen = phys_c * (endsteptime - ttt)
@@ -940,7 +940,7 @@ def run_multigroup(n_particles, particle_prop, current_time, dt, mesh_sigma_a):
 
 
 @njit
-def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a, mesh_sigma_s, mesh_sigma_t, mesh_fleck, thin_cells):
+def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a, mesh_sigma_s, mesh_sigma_t, mesh_fleck, thin_cells, nmu_cell):
     """Advance particles over a time-step, including implicit scattering."""
     num_x_cells = len(mesh.x_cellcenters)
     num_y_cells = len(mesh.y_cellcenters)
@@ -999,8 +999,7 @@ def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a,
             # Clamp tiny distances
             dist_bx = max(dist_bx, eps)
             dist_by = max(dist_by, eps)
-
-            # Minimum distance to boundary
+            
             dist_b = min(dist_bx, dist_by)
             # Calculate distance to census
             dist_cen = phys_c * (endsteptime - ttt)
@@ -1026,9 +1025,12 @@ def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a,
             nrgscattered[x_cell_idx, y_cell_idx] += nrg_change * frac_scattered
             # calculate average length of scatter
             average_scatter_length = 1 / mesh_sigma_t[x_cell_idx, y_cell_idx] * (1 - (1 + mesh_sigma_t[x_cell_idx, y_cell_idx] * dist) * np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist))/(1 - np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist))
-            if average_scatter_length <0:
+            if average_scatter_length < 0 or np.isnan(average_scatter_length):
+                print(f'average_scatter_length = {average_scatter_length}')
+                print(f'1/mesh.sigma_t = {1 / mesh_sigma_t[x_cell_idx, y_cell_idx]}')
+                print(f'np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist = {np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist)}')
+                print(f'dist = {dist}')
                 raise ValueError
-            # print(f'average_scatter_length = {average_scatter_length}')
             # print(f'mesh_sigma_t = {mesh_sigma_t[x_cell_idx, y_cell_idx]}')
             # print(f'dist = {dist}')
             average_xposition_of_scatter = xpos + xvec[0] * average_scatter_length
@@ -1095,10 +1097,27 @@ def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a,
                 break  # Finish history for this particle
 
     # Start implicit scattering process
-    epsilon = 0.1
+    epsilon = 1e-3
     iterations = 0
     converged = False
-
+    # with objmode:
+    #     plt.figure()
+    #     pc = plt.pcolormesh(mesh.x_edges,
+    #                         mesh.y_edges,
+    #                         nrgscattered.T,  # Transpose to match orientation
+    #                         cmap='inferno',
+    #                         edgecolors='k',       # 'k' for black borders around cells
+    #                         linewidth=0.5,
+    #                         shading='flat',
+    #                         norm=LogNorm())        
+    #     plt.colorbar(pc, label=f'Scattered Energy [ergs]')
+    #     # plt.clim(vmin=0.05, vmax=0.3)
+    #     plt.xlabel('x')
+    #     plt.ylabel('y')
+    #     plt.title(f'Scattered energy at t={time.time}')
+    #     plt.axis('equal')
+    #     plt.grid(True, linestyle='--', linewidth=0.5, color='white')
+    #     plt.show()
     # Calculate zone-wise average position of scatter and average time of scatter
     X_s = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
     Y_s = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
@@ -1113,6 +1132,7 @@ def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a,
     # with objmode:
     #     print(f'nrgdep before implicit scattering = {nrgdep}')
     #     print(f'nrgscattered before implicit scattering = {nrgscattered}')
+    original_nrg_scattered = np.copy(nrgscattered)
     while not converged:
         # with objmode:
         #     print(f'starting scattering iteration')
@@ -1141,15 +1161,18 @@ def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a,
                 y_positions = mesh.y_edges[iy] + (np.arange(ptcl.Ny[ix, iy]) + 0.5) * dy_cell / ptcl.Ny[ix, iy]
 
                 # Uniform angular spacing over [0, 2π)
-                nmu_cell = int(ptcl.Nmu[ix, iy])
-                angles = (np.arange(nmu_cell) + 0.5) / nmu_cell * 2.0 * np.pi
+                angles = (np.arange(nmu_cell[ix, iy]) + 0.5) / nmu_cell[ix, iy] * 2.0 * np.pi
 
                 # Emission time spacing
                 emission_times = current_time + (np.arange(ptcl.Nt[ix, iy]) + 0.5) * dt / ptcl.Nt[ix, iy]
 
                 # The number of source particles in the cell
-                n_source_ptcls = ptcl.Nx[ix, iy] * ptcl.Ny[ix, iy] * nmu_cell * ptcl.Nt[ix, iy]
-
+                n_source_ptcls = ptcl.Nx[ix, iy] * ptcl.Ny[ix, iy] * nmu_cell[ix, iy] * ptcl.Nt[ix, iy]
+                # with objmode:
+                #     print(f'xpositions = {x_positions}')
+                #     print(f'y_positions = {y_positions}')
+                #     print(f'angles = {angles}')
+                #     print(f'times = {emission_times}')
                 # Energy per particle
                 nrg = nrgscattered[ix, iy] / n_source_ptcls
                 startnrg = nrg
@@ -1178,12 +1201,12 @@ def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a,
                                     P_tally[ix, iy] += P
                                     # [emission_time, x_idx, y_idx, xpos, ypos, theta, frq, nrg, startnrg]
                                     idx = n_scattered_particles
-                                    scattered_particles[idx, 0] = ttt  # origin
-                                    scattered_particles[idx, 1] = ix  # time
-                                    scattered_particles[idx, 2] = iy  # cell index
-                                    scattered_particles[idx, 3] = xpos  # position
-                                    scattered_particles[idx, 4] = ypos  # direction
-                                    scattered_particles[idx, 5] = theta
+                                    scattered_particles[idx, 0] = ttt  # time
+                                    scattered_particles[idx, 1] = ix  # x cell index
+                                    scattered_particles[idx, 2] = iy  # y cell index
+                                    scattered_particles[idx, 3] = xpos  # x position
+                                    scattered_particles[idx, 4] = ypos  # y position
+                                    scattered_particles[idx, 5] = theta # direction
                                     scattered_particles[idx, 6] = 0  # frequency
                                     scattered_particles[idx, 7] = nrg  # start energy
                                     scattered_particles[idx, 8] = P  # start energy
@@ -1199,7 +1222,7 @@ def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a,
             # Set particle energy
             nrg = nrgscattered[ix, iy] * P / P_tally[ix, iy]
             # Set particle startnrg
-            scattered_particles[idx, 7] = nrg  # start energy
+            scattered_particles[idx, 7] = nrg 
         # Reset nrgscattered
         nrgscattered = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
         x_Es = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
@@ -1247,8 +1270,7 @@ def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a,
                 # Clamp tiny distances
                 dist_bx = max(dist_bx, eps)
                 dist_by = max(dist_by, eps)
-
-                # Minimum distance to boundary
+                
                 dist_b = min(dist_bx, dist_by)
                 # Calculate distance to census
                 dist_cen = phys_c * (endsteptime - ttt)
@@ -1336,6 +1358,7 @@ def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a,
         Y_s = y_Es / nrgscattered
         T_s = tEs / nrgscattered    
         iterations += 1
+        
         n_existing_particles = n_particles
         n_total_particles = n_existing_particles + n_scattered_particles   
 
@@ -1354,8 +1377,22 @@ def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a,
             # Update the global number of particles
             n_particles = n_existing_particles + n_to_add
 
-        if np.all(np.abs(nrgscattered - old_nrg_scattered) < epsilon):
+
+        total_old_nrgscattered = np.sum(old_nrg_scattered)
+        total_new_nrgscattered = np.sum(nrgscattered)
+        total_original_nrg_scattered = np.sum(original_nrg_scattered)
+        # with objmode:
+        #     print(f'total original scattered energy = {total_original_nrg_scattered}')
+        #     print(f'total old scattered energy = {total_old_nrgscattered}')
+        #     print(f'total new scattered energy = {total_new_nrgscattered}')
+        
+        rel_remaining = total_new_nrgscattered / total_original_nrg_scattered
+
+        if rel_remaining < epsilon:
             converged = True
+
+
+
 
         # converged = True
         # for k in range(thin_cells.shape[0]):

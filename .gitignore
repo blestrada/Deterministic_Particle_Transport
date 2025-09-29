@@ -5,6 +5,10 @@
 *.mod
 *.exe
 *.out
+*.png
+*.npz
+*.mp4
+*.csv
 .DS_Store
 .ipynb_checkpoints
 docs/html
@@ -12,5 +16,4 @@ docs/latex
 docs/doxygen.log
 inputs/
 *.csv
-!inputs/.gitkeep
 .venv

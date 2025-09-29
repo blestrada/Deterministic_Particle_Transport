@@ -654,10 +654,11 @@ def crooked_pipe(output_file):
 
     # Set Physical Constants
     phys.c = 2.99792458e2  # [cm/sh] 
-    phys.a = 1.3720e14  # erg/(cm^3-keV^4)
-    phys.sb = phys.a * phys.c / 4 # erg / (cm2 − sh −keV4)
+    # phys.a = 1.3720e14  # erg/(cm^3-keV^4)
+    phys.a = 0.01372 # jk / (cm^3-keV^4)
+    phys.sb = phys.a * phys.c / 4 # energy / (cm2 − sh −keV4)
     phys.invc = 1.0 / phys.c
-    print(f'Physical constants: phys.c = {phys.c} [cm/sh], phys.a = {phys.a} [erg/(cm^3-keV^4)], phys.sb = {phys.sb} [erg/(cm2 − sh −keV4)]')
+    print(f'Physical constants: phys.c = {phys.c} [cm/sh], phys.a = {phys.a} [jk/(cm^3-keV^4)], phys.sb = {phys.sb} [jk/(cm2 − sh −keV4)]')
     
     print(f'mesh.dx = {mesh.dx}')
     print(f'mesh.dy = {mesh.dy}')
@@ -673,8 +674,8 @@ def crooked_pipe(output_file):
     thin_density = 0.01 # [g/cm^3]
     thick_density = 10.0 # [g/cm^3]
 
-    thin_mass_opacity = 2.0 #[cm^2/g]
-    thick_mass_opacity = 2.0 # [cm^2/g]
+    thin_mass_opacity = 20.0 #[cm^2/g]
+    thick_mass_opacity = 20.0 # [cm^2/g]
 
     thin_opacity = thin_mass_opacity * thin_density # [1/cm]
     print(f'thin_opacity = {thin_opacity} [1/cm]')
@@ -692,7 +693,7 @@ def crooked_pipe(output_file):
     cell_Nt = 1
     cell_Nx = 1
     cell_Ny = 1
-    cell_Nmu = 12
+    cell_Nmu = 20
     # Assign thin densities to the thin regions
     # Loop over each cell (i = x index, j = y index)
     for i in range(num_x_idx):
@@ -764,26 +765,26 @@ def crooked_pipe(output_file):
     print(f'shape of mesh.sigma_t = {mesh.sigma_t.shape}')
     mat.b = np.full((num_x_idx, num_y_idx), 1.e15)         # ion specific heat [ergs/gm-keV]
     mat.b = mat.b * mat.rho  # converted to [ergs/cm^3-keV]
-    mat.b[mesh.thick_cells] *= 2.0
-    mat.b[mesh.thin_cells] *= 1.0
+    mat.b[mesh.thick_cells] = 2.0 # jk/cm^3-keV
+    mat.b[mesh.thin_cells] = 1e-3 # jk/cm^3-keV
 
     print(f'mat.b = {mat.b}')
     # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, frq, nrg, startnrg]
-    part.max_array_size = 20_000_000
+    part.max_array_size = 100_000_000
     part.particle_prop = np.zeros((part.max_array_size, 9), dtype=np.float64)
     part.n_particles = 0
 
 
     # Set start time and time-step
     time.time = 0.0
-    time.dt = 0.01    # shakes
+    time.dt = 0.001    # shakes
     time.dt_max = 1.0  # shakes
-    t_final = 50.0
-    time.dt_rampfactor = 1
+    t_final = 100.0
+    time.dt_rampfactor = 1.1
     part.surface_Nmu = 10
-    part.surface_Ny = 20
-    part.surface_Nt = 5
-    bcon.T0 = 0.3 # keV
+    part.surface_Ny = 10
+    part.surface_Nt = 10
+    bcon.T0 = 0.5 # keV
     part.n_input = 52000
     # Loop over timesteps
     records = []
@@ -833,7 +834,9 @@ def crooked_pipe(output_file):
 
                 # Advance particles through transport
                 if part.mode == 'nrn':  
-                    mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run_crooked_pipe(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mesh.thin_cells)
+                    mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run_crooked_pipe(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mesh.thin_cells, part.Nmu)
+                    # Test RN version
+                    # mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run2D(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck)
                 elif part.mode == 'rn':
                     mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run2D(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck)
                 # print(f'mesh.nrgdep = {mesh.nrgdep}')
@@ -877,6 +880,22 @@ def crooked_pipe(output_file):
                 # Check for final time-step
                 if time.time + time.dt > t_final:
                     time.dt = t_final - time.time
+                # plt.figure()
+                # pc = plt.pcolormesh(mesh.x_edges,
+                #                     mesh.y_edges,
+                #                     mesh.temp.T,  # Transpose to match orientation
+                #                     cmap='inferno',
+                #                     edgecolors='k',       # 'k' for black borders around cells
+                #                     linewidth=0.5,
+                #                     shading='flat')        
+                # plt.colorbar(pc, label=f'Temperature [keV]')
+                # plt.clim(vmin=0.05, vmax=0.3)
+                # plt.xlabel('x')
+                # plt.ylabel('y')
+                # plt.title(f'Temperature at t={time.time}')
+                # plt.axis('equal')
+                # plt.grid(True, linestyle='--', linewidth=0.5, color='white')
+                # plt.show()
         df = pd.DataFrame(records)
         df.to_csv("temperature_history.csv", index=False)
         print("Temperature history saved to temperature_history.csv")

@@ -1,9 +1,11 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+
 
 # Load your CSV
-df = pd.read_csv("temperature_history_IMC.csv")
+df = pd.read_csv("temperature_history.csv")
 
 # Define the indices of interest
 point_1_indices = [
@@ -82,24 +84,66 @@ df_final = df[df["time"] == final_time]
 temp_grid = df_final.pivot(index="x_idx", columns="y_idx", values="temp").values
 
 # --- Plot ---
-plt.close()
 
-plt.figure(figsize=(7,6))
+plt.figure()
 pc = plt.pcolormesh(x_edges,
                     y_edges,
                     temp_grid.T,   # Transpose to match orientation
                     cmap="inferno",
-                    edgecolors="k",
-                    linewidth=0.5,
                     shading="flat")
 plt.colorbar(pc, label="Temperature [keV]")
-plt.clim(vmin=0.05, vmax=0.5)
+plt.clim(vmin=0.05, vmax=0.3)
 plt.xlabel("x")
 plt.ylabel("y")
+plt.xlim(x_edges[0], x_edges[-1])
+plt.ylim(0,2)
+plt.axis('scaled')
 plt.title(f"Temperature at t={final_time}")
-plt.axis("equal")
-plt.grid(True, linestyle="--", linewidth=0.5, color="white")
+plt.tight_layout
 plt.show()
+
+# Make an animation of the material temperature over time.
+
+# --- Animation setup ---
+times = sorted(df["time"].unique())  # all time points
+temp_min, temp_max = 0.05, 0.3       # fixed color scale for consistency
+
+fig, ax = plt.subplots(figsize=(6, 5))
+
+pc = ax.pcolormesh(
+    x_edges,
+    y_edges,
+    np.zeros((len(y_edges)-1, len(x_edges)-1)),  # placeholder array
+    cmap="inferno",
+    shading="flat"
+)
+cbar = fig.colorbar(pc, ax=ax, label="Temperature [keV]")
+pc.set_clim(vmin=temp_min, vmax=temp_max)
+
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+ax.set_xlim(x_edges[0], x_edges[-1])
+ax.set_ylim(0, 2)
+ax.set_aspect("equal")
+title = ax.set_title("")
+
+def update(frame):
+    t = times[frame]
+    df_t = df[df["time"] == t]
+    temp_grid = df_t.pivot(index="x_idx", columns="y_idx", values="temp").values
+    pc.set_array(temp_grid.T.ravel())  # update color values
+    title.set_text(f"Temperature at t={t:.3e}")
+    return pc, title
+
+ani = animation.FuncAnimation(
+    fig, update, frames=len(times), blit=False, interval=200
+)
+
+# Save as mp4 (requires ffmpeg installed)
+ani.save("temperature_evolution.mp4", writer="ffmpeg", dpi=150)
+
+plt.close(fig)  # close figure to avoid extra static plot
+
 
 # Plot Fiducial Points
 
