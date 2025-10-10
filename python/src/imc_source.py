@@ -72,11 +72,11 @@ def create_body_source_particles(n_particles, particle_prop, temp, current_time,
         for xpos in x_positions:
             for mu in angles:
                 for ttt in emission_times:
-                    if n_particles[0] < part.max_array_size:
+                    if n_particles < part.max_array_size:
                         # Fill the preallocated array with particle properties
                         # 0 is for frequency which we are ignoring here.
-                        particle_prop[n_particles[0]] = [origin, ttt, icell, xpos, mu, 0, nrg, startnrg]
-                        n_particles[0] += 1
+                        particle_prop[n_particles] = [origin, ttt, icell, xpos, mu, 0, nrg, startnrg]
+                        n_particles += 1
                     else:
                         print("Warning: Maximum number of particles reached!")
     
@@ -324,14 +324,14 @@ def create_surface_source_particles(n_particles, particle_prop, current_time, dt
     # Create particles and add them to global list
     for mu in angles:
         for ttt in emission_times:
-            if n_particles[0] < part.max_array_size:
+            if n_particles < part.max_array_size:
                 # Fill the preallocated array with particle properties
                 # 0 is for frequency which we are ignoring here.
                 ptcl_nrg =  nrg
                 startnrg = ptcl_nrg
                 # print(f'energy of a surface source particle = {ptcl_nrg}')
-                particle_prop[n_particles[0]] = [origin, ttt, icell, xpos, mu, 0, nrg, startnrg]
-                n_particles[0] += 1
+                particle_prop[n_particles] = [origin, ttt, icell, xpos, mu, 0, nrg, startnrg]
+                n_particles += 1
             else:
                 print("Warning: Maximum number of particles reached!")
 
@@ -599,14 +599,14 @@ def imc_source_particles(e_rad, n_rad, e_surf, n_surf, e_body, n_body, particle_
         nrg = e_surf / float(n_surf)
         startnrg = nrg
         for _ in range(n_surf):
-            if n_particles[0] < max_particles:
+            if n_particles < max_particles:
                 origin = -1
                 xpos = 0.0
                 mu = np.sqrt(np.random.uniform())  # Corresponds to f(mu) = 2mu
                 ttt = current_time + np.random.uniform() * dt
                 # Fill the preallocated array with particle properties
-                particle_prop[n_particles[0]] = [origin, ttt, 0, xpos, mu, 0, nrg, startnrg]
-                n_particles[0] += 1
+                particle_prop[n_particles] = [origin, ttt, 0, xpos, mu, 0, nrg, startnrg]
+                n_particles += 1
             else:
                 print("Warning: Maximum number of particles reached!")
                 break
@@ -618,14 +618,14 @@ def imc_source_particles(e_rad, n_rad, e_surf, n_surf, e_body, n_body, particle_
         nrg = e_body[icell] / float(n_body[icell])
         startnrg = nrg
         for _ in range(n_body[icell]):
-            if n_particles[0] < max_particles:
+            if n_particles < max_particles:
                 origin = icell
                 xpos = mesh.nodepos[icell] + np.random.uniform() * mesh.dx
                 mu = 1.0 - 2.0 * np.random.uniform()
                 ttt = current_time + np.random.uniform() * dt
                 # Fill the preallocated array
-                particle_prop[n_particles[0]] = [origin, ttt, icell, xpos, mu, 0, nrg, startnrg]
-                n_particles[0] += 1
+                particle_prop[n_particles] = [origin, ttt, icell, xpos, mu, 0, nrg, startnrg]
+                n_particles += 1
             else:
                 print("Warning: Maximum number of particles reached!")
                 break
@@ -637,14 +637,14 @@ def imc_source_particles(e_rad, n_rad, e_surf, n_surf, e_body, n_body, particle_
         nrg = e_rad[icell] / float(n_rad[icell])
         startnrg = nrg
         for _ in range(n_rad[icell]):
-            if n_particles[0] < max_particles:
+            if n_particles < max_particles:
                 origin = icell
                 xpos = mesh.nodepos[icell] + np.random.uniform() * mesh.dx
                 mu = 1.0 - 2.0 * np.random.uniform()
                 ttt = current_time + np.random.uniform() * dt
                 # Fill the preallocated array
-                particle_prop[n_particles[0]] = [origin, ttt, icell, xpos, mu, 0, nrg, startnrg]
-                n_particles[0] += 1
+                particle_prop[n_particles] = [origin, ttt, icell, xpos, mu, 0, nrg, startnrg]
+                n_particles += 1
             else:
                 print("Warning: Maximum number of particles reached!")
                 break
@@ -685,7 +685,7 @@ def run(fleck, temp, sigma_a, particle_prop, n_particles, current_time, dt):
     n_particles, particle_prop = imc_source_particles(e_rad, n_rad, e_surf, n_surf, e_body, n_body, particle_prop, n_particles, current_time, dt)
 
     # Final particle count in system
-    print("Number of particles in the system = {:12d}".format(n_particles[0]))
+    print("Number of particles in the system = {:12d}".format(n_particles))
 
     return n_particles, particle_prop
 

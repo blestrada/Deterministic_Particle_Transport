@@ -76,7 +76,7 @@ def marshak_wave_tally(nrgdep, n_particles, particle_prop, matnrgdens, temp, sig
     # Calculate end-of-step radiation energy density
     radnrgdens = np.zeros(mesh.ncells)
 
-    for i in range(n_particles[0]):
+    for i in range(n_particles):
         particle = particle_prop[i]  
         nrg = particle[6]
         if nrg >= 0.0:

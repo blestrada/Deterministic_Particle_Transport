@@ -234,7 +234,7 @@ def marshak_wave(output_file):
 
     # Set physical constants
     phys.c = 2.99792458e2  # [cm/sh] 
-    phys.a = 0.01372016  #  [jrk/(cm^3-keV^4)]
+    phys.a = 0.01372016  #  [jk/(cm^3-keV^4)]
     phys.sb = phys.a * phys.c / 4.0
     phys.invc = 1.0 / phys.c
     print(f'Physical constants: phys.c = {phys.c}, phys.a = {phys.a}, phys.sb = {phys.sb}')
@@ -246,14 +246,15 @@ def marshak_wave(output_file):
     
     time.dt = 1e-07
     t_final = 0.3
-    dt_max = 1e-04
+    dt_max = 1e-03
     
     print(f'temperature = {mesh.temp[:10]}')
     print(f'rad temp = {mesh.radtemp[:10]}')
 
     # initialize particle arrays
+    part.max_array_size = 50_000_000
     part.particle_prop = np.zeros((part.max_array_size, 8), dtype=np.float64)
-    part.n_particles = np.zeros(1, dtype=int)
+    part.n_particles = 0
 
     # Set density and heat capacity
     mat.rho = 1.0  # [g/cc]
@@ -270,7 +271,7 @@ def marshak_wave(output_file):
     time.time = 0.0
     mesh.matnrgdens = mesh.temp * mat.b * mat.rho
     print(f'mesh.matnrgdens = {mesh.matnrgdens[:10]}')
-
+    parallel=True
     print()
     # Loop over timesteps
     try:
@@ -295,11 +296,57 @@ def marshak_wave(output_file):
                     part.n_particles, part.particle_prop = imc_source.run(mesh.fleck, mesh.temp, mesh.sigma_a, part.particle_prop, part.n_particles, time.time, time.dt)
 
                 # Track particles through the mesh
-                if part.mode == 'rn':
-                    mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run_random(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.fleck, mesh.sigma_s)
-
                 if part.mode == 'nrn':
-                    mesh.nrgdep, part.n_particles, part.particle_prop, eddington = imc_track.run(part.n_particles, part.particle_prop, time.time, time.dt, part.Nmu, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck)
+                    if parallel:
+                        # Step 1: Track initial batch of particles
+                        mesh.nrgdep, nrgscattered, x_Es, tEs = imc_track.run_parallel_firstloop(
+                             part.n_particles, part.particle_prop,
+                             time.time, time.dt, part.Nmu, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck)
+                        
+                        original_nrg_scattered = np.copy(nrgscattered)
+
+                        # Step 2: Implicit scattering loop
+                        epsilon = 1e-3
+                        iterations=0
+                        converged=False
+
+                        while not converged:
+                            # Generate scattered particles
+                            scattered_particles, n_scattered_particles = imc_track.generate_scattered_particles1D(
+                                nrgscattered, x_Es, tEs,
+                                mesh.nodepos, mesh.dx, 
+                                part.max_array_size, part.Nx, part.Nt, part.Nmu,
+                                time.time, time.dt
+                            )
+
+                            # Track scattered particles
+                            nrgdep_scat, nrgscattered, x_Es, tEs = imc_track.run_parallel_firstloop(
+                                n_scattered_particles, scattered_particles,
+                                time.time, time.dt, part.Nmu, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck)
+                            
+                            # Add scattered particle deposition to the mesh
+                            mesh.nrgdep += nrgdep_scat
+
+                            # Copy existing particles into global array
+                            n_existing_particles = part.n_particles
+                            n_total_particles = n_existing_particles + n_scattered_particles
+                            if n_total_particles > part.max_array_size:
+                                raise ValueError("Not enough space in global array for scattered particles")
+
+                            part.particle_prop[n_existing_particles:n_total_particles, :] = scattered_particles[:n_scattered_particles, :]
+                            part.n_particles = n_total_particles
+
+                            # Check convergence
+                            rel_remaining = np.sum(nrgscattered) / np.sum(original_nrg_scattered)
+                            if rel_remaining < epsilon:
+                                converged = True
+                        
+                            iterations += 1
+                        # After congerging, dump remaining scattered energy
+                        print(f'Number of scattering iterations = {iterations}')
+                    # else:
+                    #     mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run_(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.fleck, mesh.sigma_s)
+
 
                 part.n_particles, part.particle_prop  = imc_track.clean(part.n_particles, part.particle_prop)
 
@@ -333,38 +380,38 @@ def marshak_wave(output_file):
                 #     elif i > cell_max_index and abs(eddington[i] - 1/3) <= tolerance:
                 #         part.Nmu[i] = 4
                 # Plot Eddington
-                if time.step % 1000 == 0:  # Check if the current time step is a multiple
+                # if time.step % 1000 == 0:  # Check if the current time step is a multiple
                     
-                    # part.Nmu[0:10] = 8
-                    fig, ax1 = plt.subplots()  # Create the plot
+                #     # part.Nmu[0:10] = 8
+                #     fig, ax1 = plt.subplots()  # Create the plot
                     
-                    # Plot the temperature on the left y-axis
-                    ax1.plot(mesh.cellpos, mesh.temp, label='Material Temperature', color='b')
+                #     # Plot the temperature on the left y-axis
+                #     ax1.plot(mesh.cellpos, mesh.temp, label='Material Temperature', color='b')
                     
-                    ax1.set_xlabel('x')
-                    ax1.set_ylabel('Material Temperature', color='k')
-                    ax1.set_yticks(np.arange(0, 1.01, 0.1))
-                    ax1.set_xticks(np.arange(0, 0.1501, 0.03))
-                    ax1.set_ylim(0, 1.1)
-                    ax1.tick_params(axis='y', labelcolor='k')
+                #     ax1.set_xlabel('x')
+                #     ax1.set_ylabel('Material Temperature', color='k')
+                #     ax1.set_yticks(np.arange(0, 1.01, 0.1))
+                #     ax1.set_xticks(np.arange(0, 0.1501, 0.03))
+                #     ax1.set_ylim(0, 1.1)
+                #     ax1.tick_params(axis='y', labelcolor='k')
                     
-                    # Create a second y-axis for the Eddington factor
-                    ax2 = ax1.twinx()
-                    ax2.plot(mesh.cellpos, eddington, label='Eddington Factor', color='g')
-                    ax2.set_ylabel('Eddington Factor', color='k')
-                    ax2.set_ylim(0, 1)
-                    ax2.tick_params(axis='y', labelcolor='k')
-                    ax2.set_yticks(np.arange(0, 1.01, 0.1))
+                #     # Create a second y-axis for the Eddington factor
+                #     ax2 = ax1.twinx()
+                #     ax2.plot(mesh.cellpos, eddington, label='Eddington Factor', color='g')
+                #     ax2.set_ylabel('Eddington Factor', color='k')
+                #     ax2.set_ylim(0, 1)
+                #     ax2.tick_params(axis='y', labelcolor='k')
+                #     ax2.set_yticks(np.arange(0, 1.01, 0.1))
                     
-                    # Title and legend
-                    plt.title(f'Eddington Factor @ time={time.time}')
-                    ax1.legend(loc='upper left')
-                    ax2.legend(loc='upper right')
+                #     # Title and legend
+                #     plt.title(f'Eddington Factor @ time={time.time}')
+                #     ax1.legend(loc='upper left')
+                #     ax2.legend(loc='upper right')
                     
-                    # Save the figure with the time in the filename
-                    filename = 'marshak_eddington_time_{:.2f}.png'.format(time.time)
-                    plt.savefig(filename, format='png')
-                    plt.close()
+                #     # Save the figure with the time in the filename
+                #     filename = 'marshak_eddington_time_{:.2f}.png'.format(time.time)
+                #     plt.savefig(filename, format='png')
+                #     plt.close()
                 # Plot
                 if plottimenext <= 2 and time.time >= plottimes[plottimenext]:
                     print(f"Plotting {plottimenext}")
@@ -690,10 +737,10 @@ def crooked_pipe(output_file):
         part.Nx = np.full((num_x_idx, num_y_idx), 1)
         part.Ny = np.full((num_x_idx, num_y_idx), 1)
         part.Nt = np.full((num_x_idx, num_y_idx), 1)
-    cell_Nt = 1
-    cell_Nx = 1
-    cell_Ny = 1
-    cell_Nmu = 20
+    cell_Nt = 5
+    cell_Nx = 5
+    cell_Ny = 5
+    cell_Nmu = 8
     # Assign thin densities to the thin regions
     # Loop over each cell (i = x index, j = y index)
     for i in range(num_x_idx):
@@ -770,7 +817,7 @@ def crooked_pipe(output_file):
 
     print(f'mat.b = {mat.b}')
     # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, frq, nrg, startnrg]
-    part.max_array_size = 100_000_000
+    part.max_array_size = 500_000_000
     part.particle_prop = np.zeros((part.max_array_size, 9), dtype=np.float64)
     part.n_particles = 0
 
@@ -781,11 +828,12 @@ def crooked_pipe(output_file):
     time.dt_max = 1.0  # shakes
     t_final = 100.0
     time.dt_rampfactor = 1.1
-    part.surface_Nmu = 10
-    part.surface_Ny = 10
-    part.surface_Nt = 10
-    bcon.T0 = 0.5 # keV
-    part.n_input = 52000
+    part.surface_Nmu = 50
+    part.surface_Ny = 20
+    part.surface_Nt = 100
+    bcon.T0 = 0.3 # keV
+    part.n_input = 600_000
+    parallel = True
     # Loop over timesteps
     records = []
     try:
@@ -833,8 +881,62 @@ def crooked_pipe(output_file):
                     )
 
                 # Advance particles through transport
-                if part.mode == 'nrn':  
-                    mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run_crooked_pipe(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mesh.thin_cells, part.Nmu)
+                if part.mode == 'nrn': 
+                    if parallel:
+                        # Step 1: Track initial particles
+                        mesh.nrgdep, nrgscattered, x_Es, y_Es, tEs = imc_track.run_crooked_pipe_firstloop(
+                            part.n_particles, part.particle_prop,
+                            time.time, time.dt,
+                            mesh.sigma_a, mesh.sigma_s, mesh.sigma_t,
+                            mesh.fleck, mesh.x_edges, mesh.y_edges
+                        )
+                        original_nrg_scattered = np.copy(nrgscattered)
+
+                        # Step 2: Implicit scattering loop
+                        epsilon = 1e-3
+                        iterations = 0
+                        converged = False
+
+                        while not converged:
+                            # Generate scattered particles
+                            scattered_particles, n_scattered_particles = imc_track.generate_scattered_particles(
+                                nrgscattered, x_Es, y_Es, tEs,
+                                mesh.x_edges, mesh.y_edges, mesh.dx, mesh.dy,
+                                part.max_array_size, part.Nx, part.Ny, part.Nt, part.Nmu,
+                                time.time, time.dt
+                            )
+
+                            # Track scattered particles
+                            nrgdep_scat, nrgscattered, x_Es, y_Es, tEs = imc_track.run_crooked_pipe_firstloop(
+                                n_scattered_particles, scattered_particles,
+                                time.time, time.dt,
+                                mesh.sigma_a, mesh.sigma_s, mesh.sigma_t,
+                                mesh.fleck, mesh.x_edges, mesh.y_edges
+                            )
+
+                            # Add scattered particle deposition to the mesh
+                            mesh.nrgdep += nrgdep_scat
+
+                            # Copy scattered particles into global array
+                            n_existing_particles = part.n_particles
+                            n_total_particles = n_existing_particles + n_scattered_particles
+                            if n_total_particles > part.max_array_size:
+                                raise ValueError("Not enough space in global array for scattered particles")
+
+                            part.particle_prop[n_existing_particles:n_total_particles, :] = scattered_particles[:n_scattered_particles, :]
+                            part.n_particles = n_total_particles
+
+                            # Check convergence
+                            rel_remaining = np.sum(nrgscattered) / np.sum(original_nrg_scattered)
+                            if rel_remaining < epsilon:
+                                converged = True
+                        
+                            iterations += 1
+                        # After congerging, dump remaining scattered energy
+                        print(f'Number of scattering iterations = {iterations}')    
+                    else:
+                        mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run_crooked_pipe(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mesh.thin_cells, part.Nmu)
+                    
                     # Test RN version
                     # mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run2D(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck)
                 elif part.mode == 'rn':
@@ -860,15 +962,7 @@ def crooked_pipe(output_file):
                     raise RuntimeError(f"Negative material temp detected! min(mesh.temp) = {np.min(mesh.temp)}")
                 if np.any(mesh.radtemp < 0.0):
                     raise RuntimeError(f"Negative rad temp! min(mesh.radtemp) = {np.min(mesh.radtemp)}")
-                nx, ny = mesh.temp.shape
-                for j in range(ny):
-                    for i in range(nx):
-                        records.append({
-                            "time": time.time,
-                            "x_idx": i,
-                            "y_idx": j,
-                            "temp": mesh.temp[i, j]
-                        })
+                
                 # Update time
                 time.time = round(time.time + time.dt, 8)
                 time.step += 1
@@ -880,6 +974,15 @@ def crooked_pipe(output_file):
                 # Check for final time-step
                 if time.time + time.dt > t_final:
                     time.dt = t_final - time.time
+                nx, ny = mesh.temp.shape
+                for j in range(ny):
+                    for i in range(nx):
+                        records.append({
+                            "time": time.time,
+                            "x_idx": i,
+                            "y_idx": j,
+                            "temp": mesh.temp[i, j]
+                        })
                 # plt.figure()
                 # pc = plt.pcolormesh(mesh.x_edges,
                 #                     mesh.y_edges,

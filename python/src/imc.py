@@ -3,6 +3,7 @@
 import argparse
 import logging
 import time as pytime
+import os
 
 import imc_global_part_data as part
 import imc_global_mesh_data as mesh
@@ -30,12 +31,17 @@ def parse_args():
     )
 
     parser.add_argument("-i", "--input", default="imc.in", help="Name of input file")
-    parser.add_argument(
-        "-o", "--output", default="imc.out", help="Name of output file"
-    )
-    parser.add_argument("-d", "--debug", default=False, help="Debug mode")
+    parser.add_argument("-o", "--output", help="Name of output file")
+    parser.add_argument("-d", "--debug", action="store_true", help="Enable debug mode")
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    # If output not specified, append .out to input name
+    if args.output is None:
+        base = os.path.splitext(args.input)[0]
+        args.output = f"{base}.out"
+
+    return args
 
 
 def main(input_file, output_file, debug_mode):

@@ -6,6 +6,7 @@ import matplotlib.animation as animation
 
 # Load your CSV
 df = pd.read_csv("temperature_history.csv")
+df_imc = pd.read_csv("temperature_history_IMC2.csv")
 
 # Define the indices of interest
 point_1_indices = [
@@ -154,25 +155,47 @@ avg_temp_point3 = get_avg_temp(df, point_3_indices)
 avg_temp_point4 = get_avg_temp(df, point_4_indices)
 avg_temp_point5 = get_avg_temp(df, point_5_indices)
 
+avg_temp_point1_imc = get_avg_temp(df_imc, point_1_indices)
+avg_temp_point2_imc = get_avg_temp(df_imc, point_2_indices)
+avg_temp_point3_imc = get_avg_temp(df_imc, point_3_indices)
+avg_temp_point4_imc = get_avg_temp(df_imc, point_4_indices)
+avg_temp_point5_imc = get_avg_temp(df_imc, point_5_indices)
+
 
 plt.figure(figsize=(8,6))
+markersize=5.0
+# DPT
 plt.scatter(avg_temp_point1["time"], avg_temp_point1["temp"], 
-         marker="+", color="blue", label="Point 1")
+         marker="o", color="blue", label="DPT", s=markersize)
 plt.scatter(avg_temp_point2["time"], avg_temp_point2["temp"], 
-         marker="x", color="blue", label="Point 2")
+         marker="o", color="blue", s=markersize)
 plt.scatter(avg_temp_point3["time"], avg_temp_point3["temp"], 
-         marker="o", color="blue", label="Point 3")
+         marker="o", color="blue", s=markersize)
 plt.scatter(avg_temp_point4["time"], avg_temp_point4["temp"], 
-         marker="v", color="blue", label="Point 4")
+         marker="o", color="blue", s=markersize)
 plt.scatter(avg_temp_point5["time"], avg_temp_point5["temp"], 
-         marker="^", color="blue", label="Point 5")
+         marker="o", color="blue", s=markersize)
+
+# IMC
+plt.scatter(avg_temp_point1_imc["time"], avg_temp_point1_imc["temp"], 
+         marker="o", color="red", label="IMC", s=markersize)
+plt.scatter(avg_temp_point2_imc["time"], avg_temp_point2_imc["temp"], 
+         marker="o", color="red", s=markersize)
+plt.scatter(avg_temp_point3_imc["time"], avg_temp_point3_imc["temp"], 
+         marker="o", color="red", s=markersize)
+plt.scatter(avg_temp_point4_imc["time"], avg_temp_point4_imc["temp"], 
+         marker="o", color="red", s=markersize)
+plt.scatter(avg_temp_point5_imc["time"], avg_temp_point5_imc["temp"], 
+         marker="o", color="red", s=markersize)
+
+
 
 plt.xlabel("Time [sh]")
 plt.ylabel("Material Temperature [keV]")
 plt.xscale("log")
 # plt.yscale("log")
 plt.xlim(1e-3, 100.0)
-plt.ylim(0.0, 0.5)
+plt.ylim(0.0, 0.3)
 plt.legend()
 plt.grid(True, which="both", ls="--", alpha=0.5)
 plt.show()

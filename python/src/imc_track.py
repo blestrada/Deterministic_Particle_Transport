@@ -1,10 +1,11 @@
 """Advance particles over a time-step"""
 
 import numpy as np
-from numba import njit, jit, objmode
+from numba import njit, jit, objmode, prange, get_num_threads
 from scipy.optimize import root
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
+import numba
 
 import imc_global_mat_data as mat
 import imc_global_mesh_data as mesh
@@ -193,7 +194,7 @@ def run_random(n_particles, particle_prop, current_time, dt, mesh_sigma_a, mesh_
     print(f'Particle Loop')
 
     # Loop over all particles
-    for iptcl in range(n_particles[0]):
+    for iptcl in range(n_particles):
         # Get particle's initial properties at start of time-step
         ttt = particle_prop[iptcl, 1]
         icell = int(particle_prop[iptcl, 2])  # Convert to int
@@ -214,21 +215,16 @@ def run_random(n_particles, particle_prop, current_time, dt, mesh_sigma_a, mesh_
             #     print(f'endsteptime = {endsteptime}')
 
             # Calculate distance to boundary
-            if mu > 0.0:
-                dist_b = (mesh_nodepos[icell + 1] - xpos) / mu
-            else:
-                dist_b = (mesh_nodepos[icell] - xpos) / mu
+            dist_b = distance_to_boundary_1D(xpos, mu, mesh_nodepos[icell], mesh_nodepos[icell+1])
         
             # Calculate distance to census
-            dist_cen = phys_c * (endsteptime - ttt)
+            dist_cen = distance_to_census(phys_c, ttt, dt)
 
             # Calculate distance to collision
-            d_coll = -np.log(np.random.uniform()) / (mesh_sigma_s[icell] + (1.0 - mesh_fleck[icell]) * mesh_sigma_a[icell])
-            if d_coll <= 0.0:
-                raise ValueError(f"d_coll {d_coll} less than zero.")
+            dist_coll = distance_to_collision(mesh_sigma_a[icell], mesh_sigma_s[icell], mesh_fleck[icell])
 
             # Actual distance - whichever happens first
-            dist = min(dist_b, dist_cen, d_coll)
+            dist = min(dist_b, dist_cen, dist_coll)
 
             # Calculate new particle energy
             newnrg = nrg * np.exp(-mesh_sigma_a[icell] * mesh_fleck[icell] * dist)
@@ -280,7 +276,7 @@ def run_random(n_particles, particle_prop, current_time, dt, mesh_sigma_a, mesh_
                 break  # Finish history for this particle 
                 
             # If event was collision, also update and direction
-            if dist == d_coll:
+            if dist == dist_coll:
                 # Collision (i.e. absorption, but treated as pseudo-scattering)
                 mu = 1.0 - 2.0 * np.random.uniform()
                 
@@ -290,6 +286,137 @@ def run_random(n_particles, particle_prop, current_time, dt, mesh_sigma_a, mesh_
     # End loop over particles
     return nrgdep, n_particles, particle_prop
 
+@njit(parallel=True)
+def run_random_parallel(n_particles,
+                        particle_prop,
+                        current_time,
+                        dt,
+                        mesh_sigma_a,
+                        mesh_fleck,
+                        mesh_sigma_s):
+    """
+    Parallel version of run_random using numba.prange and per-thread accumulators.
+
+    Returns
+    -------
+    nrgdep : np.ndarray (ncells,)
+        Energy deposited per cell (summed over all particles).
+    n_particles : int
+        Same as input (for API compatibility).
+    particle_prop : np.ndarray
+        Updated particle properties (some particles may be flagged with negative energy).
+    """
+    #-------------------------------------------------------
+    # Local references (assumes these globals exist)
+    #-------------------------------------------------------
+    ncells = mesh.ncells
+    mesh_nodepos = mesh.nodepos
+    top_cell = ncells - 1
+    mesh_rightbc = mesh.right_bc
+    mesh_leftbc = mesh.left_bc
+
+    phys_c = phys.c
+    phys_invc = phys.invc
+
+    # number of threads and per-thread accumulation buffer
+    nthreads = get_num_threads()
+    # shape: (nthreads, ncells)
+    nrgdep_local = np.zeros((nthreads, ncells), dtype=np.float64)
+
+    # MAIN parallel loop over particles
+    for iptcl in prange(n_particles):
+        # thread id for indexing per-thread local buffer
+        tid = numba.np.ufunc.parallel._get_thread_id()  # thread-local index
+
+        # load particle properties (keep local copies)
+        ttt = particle_prop[iptcl, 1]
+        icell = int(particle_prop[iptcl, 2])
+        xpos = particle_prop[iptcl, 3]
+        mu = particle_prop[iptcl, 4]
+        frq = particle_prop[iptcl, 5]
+        nrg = particle_prop[iptcl, 6]
+        startnrg = particle_prop[iptcl, 7]
+
+        # advance this particle's history for the timestep
+        while True:
+            # distance to boundary (1D cell boundaries)
+            dist_b = distance_to_boundary_1D(xpos, mu, mesh_nodepos[icell], mesh_nodepos[icell+1])
+
+            # distance to census
+            dist_cen = distance_to_census(phys_c, ttt, dt)
+
+            # distance to collision
+            dist_coll = distance_to_collision(mesh_sigma_a[icell], mesh_sigma_s[icell], mesh_fleck[icell])
+
+            # actual event distance
+            # use min with explicit comparisons to avoid ambiguous equalities causing numerical branching surprises
+            dist = dist_b
+            if dist_cen < dist:
+                dist = dist_cen
+            if dist_coll < dist:
+                dist = dist_coll
+
+            # compute attenuated energy after travelling dist
+            newnrg = nrg * np.exp(-mesh_sigma_a[icell] * mesh_fleck[icell] * dist)
+
+            # accumulate deposited energy into thread-local buffer
+            nrgdep_local[tid, icell] += (nrg - newnrg)
+
+            # advance particle
+            xpos += mu * dist
+            ttt += dist * phys_invc
+            nrg = newnrg
+
+            # boundary handling
+            if dist == dist_b:
+                # left-going
+                if mu < 0.0:
+                    if icell == 0:
+                        if mesh_leftbc == 'vacuum':
+                            particle_prop[iptcl, 6] = -1.0  # flag for deletion
+                            break
+                        elif mesh_leftbc == 'reflecting':
+                            mu = -mu
+                    else:
+                        icell -= 1
+                # right-going
+                elif mu > 0.0:
+                    if icell == top_cell:
+                        if mesh_rightbc == 'vacuum':
+                            particle_prop[iptcl, 6] = -1.0
+                            break
+                        elif mesh_rightbc == 'reflecting':
+                            mu = -mu
+                    else:
+                        icell += 1
+
+            # census event: stash updated properties and finish particle
+            if dist == dist_cen:
+                particle_prop[iptcl, 1] = ttt
+                particle_prop[iptcl, 2] = icell
+                particle_prop[iptcl, 3] = xpos
+                particle_prop[iptcl, 4] = mu
+                particle_prop[iptcl, 5] = frq
+                particle_prop[iptcl, 6] = nrg
+                break
+
+            # collision event: update direction and continue history
+            if dist == dist_coll:
+                mu = 1.0 - 2.0 * np.random.uniform()
+
+            # loop continues until break
+        # end while per-particle history
+    # end parallel loop over particles
+
+    # Reduce per-thread accumulators into single nrgdep array
+    nrgdep = np.zeros(ncells, dtype=np.float64)
+    for ic in range(ncells):
+        s = 0.0
+        for th in range(nthreads):
+            s += nrgdep_local[th, ic]
+        nrgdep[ic] = s
+
+    return nrgdep, n_particles, particle_prop
 
 @njit
 def run(n_particles, particle_prop, current_time, dt, Nmu, mesh_sigma_a, mesh_sigma_s, mesh_sigma_t, mesh_fleck):
@@ -432,7 +559,7 @@ def run(n_particles, particle_prop, current_time, dt, Nmu, mesh_sigma_a, mesh_si
                 break  # Finish history for this particle                    
     
     # Start implicit scattering process
-    epsilon = 1e-5
+    epsilon = 1e-3
     iterations = 0
     converged = False
 
@@ -450,15 +577,14 @@ def run(n_particles, particle_prop, current_time, dt, Nmu, mesh_sigma_a, mesh_si
     # Create arrays for cell-valued chi and tau
     chi = np.zeros(mesh.ncells)
     tau = np.zeros(mesh.ncells)
-    # initialize nrgdep and nrgscattered variables
 
+    old_nrgscattered = np.copy(nrgscattered)
 
     while not converged:
         scattered_particles = np.zeros((ptcl.max_array_size, 8), dtype=np.float64)
         n_scattered_particles = 0
         # Store the old nrgscattered
-        old_nrgscattered = np.zeros(mesh.ncells, dtype=np.float64)
-        old_nrgscattered[:] = nrgscattered[:]
+
         # Create source particles based on energy scattered in each cell
         P_tally = np.zeros(mesh.ncells, dtype=np.float64)
         
@@ -628,12 +754,18 @@ def run(n_particles, particle_prop, current_time, dt, Nmu, mesh_sigma_a, mesh_si
         X_s = xEs / nrgscattered # average position of scatter in a zone
         T_s = tEs / nrgscattered # average time of scatter in a zone
         iterations += 1
+        total_scattered_energy = np.sum(nrgscattered)
+        total_old_scattered_energy = np.sum(old_nrgscattered)
+        # with objmode:
+        #     print(f'scattering iteration done.')
+        #     print(f'total scattered energy = {total_scattered_energy}')
+        #     print(f'total original scattered energy = {total_old_scattered_energy}')
         # with objmode:
         #     print(f' average position of scatter in iterative loop: {X_s[0]}')
         #     print(f' average time of scatter in iterative loop: {T_s[0]}')
         # Now we need to move all the processed scattered particles to the global particle array
         # Calculate how many particles we are going to add
-        n_existing_particles = n_particles[0]
+        n_existing_particles = n_particles
         n_total_particles = n_existing_particles + n_scattered_particles
 
         # Check if the combined number of particles exceeds the maximum allowed size
@@ -649,9 +781,9 @@ def run(n_particles, particle_prop, current_time, dt, Nmu, mesh_sigma_a, mesh_si
             particle_prop[n_existing_particles:n_existing_particles + n_to_add, :] = scattered_particles[:n_to_add, :]
 
             # Update the global number of particles
-            n_particles[0] = n_existing_particles + n_to_add
+            n_particles = n_existing_particles + n_to_add
 
-        if np.all(np.abs(nrgscattered - old_nrgscattered) < epsilon):
+        if abs(total_scattered_energy / total_old_scattered_energy) < epsilon:
             converged = True
     print(f'Number of scattering iterations = {iterations}')
 
@@ -663,6 +795,7 @@ def run(n_particles, particle_prop, current_time, dt, Nmu, mesh_sigma_a, mesh_si
     #     print(f'w_average_times_mu_squared = {w_average_times_mu_squared[:10]}')
     #     print(f'w_average = {w_average[:10]}')
     eddington = w_average_times_mu_squared / w_average
+    eddington = 0
     # with objmode:
     #     print(f'eddington = {eddington[:10]}')
     #     if time.step % 100 == 0:  # Check if the current time step is a multiple of 25
@@ -685,281 +818,270 @@ def run(n_particles, particle_prop, current_time, dt, Nmu, mesh_sigma_a, mesh_si
     return nrgdep, n_particles, particle_prop, eddington
 
 
-@njit
-def run2D(n_particles, particle_prop, current_time, dt, sigma_a, sigma_s, sigma_t, fleck):
-    """Advance particles over a time-step"""
-    num_x_cells = len(mesh.x_cellcenters)
-    num_y_cells = len(mesh.y_cellcenters)
-    nrgdep = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-
-    endsteptime = current_time + dt
-    phys_c = phys.c
-    phys_invc = phys.invc
-    with objmode:
-        print(f'Particle Loop')
-    # [emission_time, x_idx, y_idx, xpos, ypos, mu, frq, nrg, startnrg]
-    for iptcl in range(n_particles):
-        # Get particle's initial properties at start of time-step
-        ttt = particle_prop[iptcl, 0]
-        x_cell_idx = int(particle_prop[iptcl, 1])
-        y_cell_idx = int(particle_prop[iptcl, 2])
-        xpos = particle_prop[iptcl, 3]
-        ypos = particle_prop[iptcl, 4]
-        theta = particle_prop[iptcl, 5]
-        frq = particle_prop[iptcl, 6]
-        nrg = particle_prop[iptcl, 7]
-        startnrg = particle_prop[iptcl, 8]
-
-        # Loop over segments in the particle history
-        while True:
-            eps = 1e-12
-            xvec = np.array([np.cos(theta), np.sin(theta)])
-
-            # Distance to x-boundary
-            if abs(xvec[0]) < eps:
-                dist_bx = np.inf  # particle moving almost vertical
-            elif xvec[0] > 0:
-                x_edge = mesh.x_edges[x_cell_idx + 1]  # right edge
-                dist_bx = (x_edge - xpos) / xvec[0]
-            else:
-                x_edge = mesh.x_edges[x_cell_idx]      # left edge
-                dist_bx = (x_edge - xpos) / xvec[0]
-
-            # Distance to y-boundary
-            if abs(xvec[1]) < eps:
-                dist_by = np.inf  # particle moving almost horizontal
-            elif xvec[1] > 0:
-                y_edge = mesh.y_edges[y_cell_idx + 1]  # top edge
-                dist_by = (y_edge - ypos) / xvec[1]
-            else:
-                y_edge = mesh.y_edges[y_cell_idx]      # bottom edge
-                dist_by = (y_edge - ypos) / xvec[1]
-
-            # Clamp tiny distances
-            dist_bx = max(dist_bx, eps)
-            dist_by = max(dist_by, eps)
-            
-            dist_b = min(dist_bx, dist_by)
-            # Calculate distance to census
-            dist_cen = phys_c * (endsteptime - ttt)
-            if dist_cen < 0:
-                raise ValueError
-            dist_coll = -np.log(np.random.uniform()) / ( (1 - fleck[x_cell_idx, y_cell_idx]) * sigma_a[x_cell_idx, y_cell_idx])
-            if dist_coll < 0:
-                print(f'fleck = {fleck[x_cell_idx, y_cell_idx]}')
-                print(f'sigma_a = {sigma_a[x_cell_idx, y_cell_idx]}')
-                raise ValueError
-            dist = min(dist_b, dist_cen, dist_coll)
-            if dist < 0:
-                raise ValueError
-            
-            # Calculate new particle energy
-            newnrg = nrg * np.exp(-fleck[x_cell_idx, y_cell_idx] * sigma_a[x_cell_idx, y_cell_idx] * dist)
-            newnrg = max(newnrg, 0.0)  # prevent negative energy
-            if newnrg < 0:
-                print(f'fleck = {fleck[x_cell_idx, y_cell_idx]}')
-                raise RuntimeError(f"New particle energy is negative! newnrg = {newnrg}")
-            nrg_change = nrg - newnrg
-            nrgdep[x_cell_idx, y_cell_idx] += nrg_change
-
-            # Advance position, time, and energy
-            xpos += xvec[0] * dist
-            ypos += xvec[1] * dist
-            ttt += dist * phys_invc
-            nrg = newnrg
-            # Boundary treatment
-            if dist == dist_bx or dist == dist_by:
-                if dist_bx < dist_by:
-                    # Moving right
-                    if xvec[0] > 0:
-                        if x_cell_idx == num_x_cells - 1:  # Right boundary -> vacuum
-                            particle_prop[iptcl, 7] = -1.0
-                            break
-                        x_cell_idx += 1
-                        
-                    else:
-                        # Moving left
-                        if x_cell_idx == 0:  # Left boundary -> vacuum
-                            particle_prop[iptcl, 7] = -1.0
-                            break
-                        x_cell_idx -= 1
-                       
-                else:
-                    # Moving up
-                    if xvec[1] > 0:
-                        if y_cell_idx == num_y_cells - 1:  # Top boundary -> vacuum
-                            particle_prop[iptcl, 7] = -1.0
-                            break
-                        y_cell_idx += 1
-
-                    else:
-                        # Moving down
-                        if y_cell_idx == 0:  # Bottom boundary -> reflecting
-                            v = np.array([0.0, 1.0])  # normal vector pointing up
-                            xreflected = xvec - v * (2 * np.dot(v, xvec))
-                            theta = np.arctan2(xreflected[1], xreflected[0])
-                            continue
-                        y_cell_idx -= 1
- 
-            # If event was collision, also update direction
-            if dist == dist_coll:
-                # Collision (i.e. absorption, but treated as pseudo-scattering)
-                theta = 2 * np.pi * np.random.uniform()
-
-            # Check if event was census
-            if dist == dist_cen:
-                # with objmode:
-                #     print(f'particle reached census')
-                # Update the particle's properties [emission_time, x_idx, y_idx, xpos, ypos, mu, frq, nrg, startnrg]
-                particle_prop[iptcl, 0] = ttt
-                particle_prop[iptcl, 1] = x_cell_idx
-                particle_prop[iptcl, 2] = y_cell_idx
-                particle_prop[iptcl, 3] = xpos
-                particle_prop[iptcl, 4] = ypos
-                particle_prop[iptcl, 5] = theta
-                particle_prop[iptcl, 6] = frq
-                particle_prop[iptcl, 7] = nrg
-                particle_prop[iptcl, 8] = startnrg
-                break  # Finish history for this particle
-
-        # End loop over history segments
-
-    # End loop over particles
-    return nrgdep, n_particles, particle_prop
-
-
-@njit
-def run_multigroup(n_particles, particle_prop, current_time, dt, mesh_sigma_a):
-    """Advance particles over a time-step."""
-
-    nrgdep = np.zeros((mesh.ncells, 50), dtype=np.float64)
-    # Optimizations
-    endsteptime = current_time + dt
+@njit(parallel=True)
+def run_parallel_firstloop(
+    n_particles,
+    particle_prop,
+    current_time,
+    dt,
+    Nmu,
+    mesh_sigma_a,
+    mesh_sigma_s,
+    mesh_sigma_t,
+    mesh_fleck
+):
+    
+    # local aliases / constants
+    ncells = mesh.ncells
     mesh_nodepos = mesh.nodepos
+    top_cell = ncells - 1
     phys_c = phys.c
-    top_cell = mesh.ncells - 1
     phys_invc = phys.invc
     mesh_rightbc = mesh.right_bc
     mesh_leftbc = mesh.left_bc
+    endsteptime = current_time + dt
 
-    print(f'Particle Loop')
+    
 
-    # Loop over all active particles
-    for iptcl in range(n_particles[0]):
-        # Get particle's initial properties at start of time-step
+    # Global tallies
+    nrgdep = np.zeros(ncells, dtype=np.float64)
+    nrgscattered = np.zeros(ncells, dtype=np.float64)
+    x_Es = np.zeros(ncells, dtype=np.float64)
+    tEs = np.zeros(ncells, dtype=np.float64)
+
+    # Private tallies for each thread
+    n_threads = get_num_threads()
+    priv_nrgdep = np.zeros((n_threads, ncells), dtype=np.float64)
+    priv_nrgscat = np.zeros((n_threads, ncells), dtype=np.float64)
+    priv_xEs = np.zeros((n_threads, ncells), dtype=np.float64)
+    priv_tEs = np.zeros((n_threads, ncells), dtype=np.float64)
+
+
+    # Parallel loop over particles
+    for iptcl in prange(n_particles):
+        tid = numba.np.ufunc.parallel._get_thread_id()  # thread-local index
+
+        # unpack particle
         ttt = particle_prop[iptcl, 1]
-        icell = int(particle_prop[iptcl, 2])  # Convert to int
+        icell = int(particle_prop[iptcl, 2])
         xpos = particle_prop[iptcl, 3]
         mu = particle_prop[iptcl, 4]
-        frq = int(particle_prop[iptcl, 5]) # Convert to int
+        frq = particle_prop[iptcl, 5]
         nrg = particle_prop[iptcl, 6]
         startnrg = particle_prop[iptcl, 7]
-            
-        # Loop over segments in the history (between boundary-crossings and collisions)
+
+        # advance this particle for the timestep
         while True:
-            # with objmode:
-            #     print(f'iptcl = {iptcl}')
-            #     print(f'icell = {icell}')
-            #     print(f'xpos = {xpos}')
-            #     print(f'mu = {mu}')
-            #     print(f'nrg = {nrg}')
-            #     print(f'ttt = {ttt}')
-            #     print(f'endsteptime = {endsteptime}')
-            #     print(f'time.time = {time.time}')
-            #     print(f'time.dt = {time.dt}')
-            #     print(f'calc = {time.time + time.dt}')
-            # Calculate distance to boundary
+            # distance to boundary
             if mu > 0.0:
                 dist_b = (mesh_nodepos[icell + 1] - xpos) / mu
             else:
                 dist_b = (mesh_nodepos[icell] - xpos) / mu
-            # with objmode:
-            #     print(f'dist_b = {dist_b}')
-            # Calculate distance to census
+
+            # distance to census
             dist_cen = phys_c * (endsteptime - ttt)
-            # with objmode:
-            #     print(f'dist_cen = {dist_cen}')
-            # Actual distance - whichever happens first
-            dist = min(dist_b, dist_cen)
-            # with objmode:
-            #     print(f'dist = {dist}')
-            # Calculate new particle energy
-            newnrg = nrg * np.exp(-mesh_sigma_a[frq] * dist)
 
-            # Calculate energy change
+            # min event distance
+            dist = dist_b
+            if dist_cen < dist:
+                dist = dist_cen
+
+            # attenuation using total opacity
+            newnrg = nrg * np.exp(-mesh_sigma_t[icell] * dist)
+
             nrg_change = nrg - newnrg
-            if nrg_change < 0:
-                raise ValueError
-            # Update energy deposition tallies
-            nrgdep[icell][frq] += nrg_change
 
-            # Advance position, time, and energy
+            # fractions
+            frac_absorbed = mesh_sigma_a[icell] * mesh_fleck[icell] / mesh_sigma_t[icell]
+            frac_scattered = ((1.0 - mesh_fleck[icell]) * mesh_sigma_a[icell] + mesh_sigma_s[icell]) / mesh_sigma_t[icell]
+
+            # update PRIVATE tallies
+            priv_nrgdep[tid, icell] += nrg_change * frac_absorbed
+            priv_nrgscat[tid, icell] += nrg_change * frac_scattered
+            
+            # implicit scattering tallies
+            average_scatter_length = (1 / mesh_sigma_t[icell] *
+                                      (1 - (1 + mesh_sigma_t[icell] * dist) *
+                                       np.exp(-mesh_sigma_t[icell] * dist)) /
+                                      (1 - np.exp(-mesh_sigma_t[icell] * dist)))
+            avg_x = xpos + mu * average_scatter_length
+            avg_t = ttt + average_scatter_length / phys_c
+
+            priv_xEs[tid, icell] += nrg_change * frac_scattered * avg_x
+            priv_tEs[tid, icell] += nrg_change * frac_scattered * avg_t
+
+
+            # advance particle
             xpos += mu * dist
             ttt += dist * phys_invc
             nrg = newnrg
 
-            # Boundary treatment
+            # boundary handling
             if dist == dist_b:
-                # Left boundary treatment
-                if mu < 0:  # If going left
-                    if icell == 0:  # At the leftmost cell
+                if mu < 0.0:
+                    if icell == 0:
                         if mesh_leftbc == 'vacuum':
-                            particle_prop[iptcl, 6] = -1.0  # Mark as destroyed
+                            particle_prop[iptcl, 6] = -1.0
                             break
                         elif mesh_leftbc == 'reflecting':
-                            mu *= -1.0  # Reflect particle
-                            if mu == 0: raise ValueError
-                    else:  # Move to the left cell
+                            mu = -mu
+                    else:
                         icell -= 1
-
-                # Right boundary treatment
-                elif mu > 0:  # If going right
-                    if icell == top_cell:  # At the rightmost cell
+                elif mu > 0.0:
+                    if icell == top_cell:
                         if mesh_rightbc == 'vacuum':
-                            particle_prop[iptcl, 6] = -1.0  # Mark as destroyed
+                            particle_prop[iptcl, 6] = -1.0
                             break
                         elif mesh_rightbc == 'reflecting':
-                            mu *= -1.0  # Reflect particle
-                            if mu == 0: raise ValueError
-                    else:  # Move to the right cell
+                            mu = -mu
+                    else:
                         icell += 1
 
-            # Check if event was census
+            # census: write back and finish this history
             if dist == dist_cen:
-                # Update the particle's properties in the array
                 particle_prop[iptcl, 1] = ttt
                 particle_prop[iptcl, 2] = icell
                 particle_prop[iptcl, 3] = xpos
                 particle_prop[iptcl, 4] = mu
                 particle_prop[iptcl, 5] = frq
                 particle_prop[iptcl, 6] = nrg
-                break  # Finish history for this particle                    
+                break
 
-    # Update global energy deposited mesh
-    return nrgdep, n_particles, particle_prop
+    # --- Reduction step ---
+    for t in range(n_threads):
+        nrgdep += priv_nrgdep[t]
+        nrgscattered += priv_nrgscat[t]
+        x_Es += priv_xEs[t]
+        tEs += priv_tEs[t]
+
+    return nrgdep, nrgscattered, x_Es, tEs
+
+def generate_scattered_particles1D(
+    nrgscattered,
+    x_Es, t_Es,
+    mesh_nodepos, mesh_dx,
+    ptcl_max_array_size, Nx, Nt, Nmu,
+    current_time, dt
+):
+    ncells= len(mesh_nodepos) - 1
+    mesh_dx = np.diff(mesh_nodepos)
+    # allocate scattered particle array
+    scattered_particles = np.zeros((ptcl_max_array_size, 8), dtype=np.float64)
+    n_scattered_particles = 0
+
+    # Average scatter positions and times
+    X_s = np.divide(x_Es, nrgscattered, out=np.zeros_like(x_Es), where=nrgscattered > 0.0)
+    T_s = np.divide(t_Es, nrgscattered, out=np.zeros_like(t_Es), where=nrgscattered > 0.0)
+
+    # Allocate chi, gamma, tau per cell
+    chi   = np.zeros(ncells, dtype=np.float64)
+    tau   = np.zeros(ncells, dtype=np.float64)
+
+    P_tally = np.zeros(ncells, dtype=np.float64)
+
+    # Loop over cells
+    for ix in range(ncells):
+        if nrgscattered[ix] <= 0.0:
+            continue  # no energy to scatter
+
+        # Shifted relative averages
+        rel_X = np.round(X_s[ix] - mesh_nodepos[ix], 8)
+        rel_T = np.round(T_s[ix] - current_time, 8)
+
+        dx_cell = mesh_dx[ix]
+
+        # Space, angle, and time grids
+        x_positions = mesh_nodepos[ix] + (np.arange(Nx) + 0.5) * dx_cell / Nx
+        angles = -1 + (np.arange(Nmu[ix]) + 0.5) * 2 / Nmu[ix]
+        emission_times = current_time + (np.arange(Nt) + 0.5) * dt / Nt
+
+        n_source_ptcls = Nx * Nmu[ix] * Nt
+        nrg = nrgscattered[ix] / n_source_ptcls
+
+        # Solve for chi, gamma, tau
+        sol = root(chi_equation, 1, args=(0.0, dx_cell, dx_cell, rel_X), method='hybr')
+        chi[ix] = sol.x
+        sol = root(tau_equation, 1, args=(0.0, dt, dt, rel_T), method='hybr')
+        tau[ix] = sol.x
+
+        # Create scattered particles
+        for xpos in x_positions:
+            for mu in angles:
+                for ttt in emission_times:
+                    if n_scattered_particles >= ptcl_max_array_size:
+                        raise RuntimeError("Maximum number of scattered particles reached")
+
+                    rel_x = xpos - mesh_nodepos[ix]
+
+                    P = p_x_t_solve(
+                        chi[ix], tau[ix],
+                        dx_cell, 0,
+                        rel_x, rel_T, 0, dt
+                    )
+
+                    if P < 0:
+                        raise ValueError(f"Negative probability P={P}")
+                    P_tally[ix] += P
+
+                    idx = n_scattered_particles
+                    scattered_particles[idx, 1] = ttt   # emission time
+                    scattered_particles[idx, 2] = ix    # x cell index
+                    scattered_particles[idx, 3] = xpos  # x position
+                    scattered_particles[idx, 4] = mu # angle
+                    scattered_particles[idx, 5] = 0     # frequency (placeholder)
+                    scattered_particles[idx, 6] = nrg   # particle energy
+                    scattered_particles[idx, 7] = P     # probability weight
+
+                    n_scattered_particles += 1
+        # Put correct energy
+        for i in range(n_scattered_particles):
+            # Get P and icell
+            icell = int(scattered_particles[i, 2])
+            P = scattered_particles[i, 7]
+            # Set particle energy
+            nrg = nrgscattered[icell] * P / P_tally[icell]
+            # Set particle startnrg
+            scattered_particles[idx, 7] = nrg  # start energy
+
+    return scattered_particles, n_scattered_particles
 
 
-@njit
-def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a, mesh_sigma_s, mesh_sigma_t, mesh_fleck, thin_cells, nmu_cell):
-    """Advance particles over a time-step, including implicit scattering."""
-    num_x_cells = len(mesh.x_cellcenters)
-    num_y_cells = len(mesh.y_cellcenters)
+
+
+# Parallel Implementations
+
+@njit(parallel=True)
+def run_crooked_pipe_firstloop(n_particles, particle_prop, current_time, dt,
+                               mesh_sigma_a, mesh_sigma_s, mesh_sigma_t,
+                               mesh_fleck, mesh_x_edges, mesh_y_edges,
+                               ):
+    num_x_cells = len(mesh_x_edges) - 1
+    num_y_cells = len(mesh_y_edges) - 1
+
+    # Global tallies
     nrgdep = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
     nrgscattered = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
     x_Es = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
     y_Es = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
     tEs = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
 
-    # Optimizations
+    # Private tallies for each thread
+    n_threads = numba.get_num_threads()
+    priv_dep = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
+    priv_scat = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
+    priv_xEs = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
+    priv_yEs = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
+    priv_tEs = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
+
     endsteptime = current_time + dt
-    
     phys_c = phys.c
     phys_invc = phys.invc
-    with objmode:
-        print(f'Particle Loop')
-    # [emission_time, x_idx, y_idx, xpos, ypos, mu, frq, nrg, startnrg]
-    for iptcl in range(n_particles):
-        # Get particle's initial properties at start of time-step
+
+    # Parallel loop over particles
+    for iptcl in prange(n_particles):
+        tid = numba.np.ufunc.parallel._get_thread_id()  # thread-local index
+
+        # unpack particle
         ttt = particle_prop[iptcl, 0]
         x_cell_idx = int(particle_prop[iptcl, 1])
         y_cell_idx = int(particle_prop[iptcl, 2])
@@ -970,81 +1092,71 @@ def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a,
         nrg = particle_prop[iptcl, 7]
         startnrg = particle_prop[iptcl, 8]
 
-        
-        # Loop over segments in the history
         while True:
             eps = 1e-12
             xvec = np.array([np.cos(theta), np.sin(theta)])
 
-            # Distance to x-boundary
+            # --- same boundary-distance logic as before ---
             if abs(xvec[0]) < eps:
-                dist_bx = np.inf  # particle moving almost vertical
+                dist_bx = np.inf
             elif xvec[0] > 0:
-                x_edge = mesh.x_edges[x_cell_idx + 1]  # right edge
+                x_edge = mesh_x_edges[x_cell_idx + 1]
                 dist_bx = (x_edge - xpos) / xvec[0]
             else:
-                x_edge = mesh.x_edges[x_cell_idx]      # left edge
+                x_edge = mesh_x_edges[x_cell_idx]
                 dist_bx = (x_edge - xpos) / xvec[0]
 
-            # Distance to y-boundary
             if abs(xvec[1]) < eps:
-                dist_by = np.inf  # particle moving almost horizontal
+                dist_by = np.inf
             elif xvec[1] > 0:
-                y_edge = mesh.y_edges[y_cell_idx + 1]  # top edge
+                y_edge = mesh_y_edges[y_cell_idx + 1]
                 dist_by = (y_edge - ypos) / xvec[1]
             else:
-                y_edge = mesh.y_edges[y_cell_idx]      # bottom edge
+                y_edge = mesh_y_edges[y_cell_idx]
                 dist_by = (y_edge - ypos) / xvec[1]
 
-            # Clamp tiny distances
             dist_bx = max(dist_bx, eps)
             dist_by = max(dist_by, eps)
-            
             dist_b = min(dist_bx, dist_by)
-            # Calculate distance to census
+
             dist_cen = phys_c * (endsteptime - ttt)
-            if dist_cen < 0:
-                raise ValueError
-            # Actual distance - whichever happens first
             dist = min(dist_b, dist_cen)
-            if dist < 0:
-                raise ValueError
-            # print(f'dist = {dist}')
-            # Calculate new particle energy
+
             newnrg = nrg * np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist)
-            # with objmode:
-            #     print(f'old nrg = {nrg}')
-            #     print(f'new_nrg = {newnrg}')
-            # calculate energy change
             nrg_change = nrg - newnrg
-            # Calculate fractions for absorption and scattering
-            frac_absorbed = mesh_sigma_a[x_cell_idx, y_cell_idx] * mesh_fleck[x_cell_idx, y_cell_idx] / mesh_sigma_t[x_cell_idx, y_cell_idx]
-            frac_scattered = ((1.0 - mesh_fleck[x_cell_idx, y_cell_idx]) * mesh_sigma_a[x_cell_idx, y_cell_idx] + mesh_sigma_s[x_cell_idx, y_cell_idx]) / mesh_sigma_t[x_cell_idx, y_cell_idx]
-            # update energy deposition tallies
-            nrgdep[x_cell_idx, y_cell_idx] += nrg_change * frac_absorbed
-            nrgscattered[x_cell_idx, y_cell_idx] += nrg_change * frac_scattered
-            # calculate average length of scatter
-            average_scatter_length = 1 / mesh_sigma_t[x_cell_idx, y_cell_idx] * (1 - (1 + mesh_sigma_t[x_cell_idx, y_cell_idx] * dist) * np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist))/(1 - np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist))
-            if average_scatter_length < 0 or np.isnan(average_scatter_length):
-                print(f'average_scatter_length = {average_scatter_length}')
-                print(f'1/mesh.sigma_t = {1 / mesh_sigma_t[x_cell_idx, y_cell_idx]}')
-                print(f'np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist = {np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist)}')
-                print(f'dist = {dist}')
-                raise ValueError
-            # print(f'mesh_sigma_t = {mesh_sigma_t[x_cell_idx, y_cell_idx]}')
-            # print(f'dist = {dist}')
-            average_xposition_of_scatter = xpos + xvec[0] * average_scatter_length
-            average_yposition_of_scatter = ypos + xvec[1] * average_scatter_length
-            average_time_of_scatter = ttt + average_scatter_length / phys_c
-            x_Es[x_cell_idx, y_cell_idx] += nrg_change * frac_scattered * average_xposition_of_scatter
-            y_Es[x_cell_idx, y_cell_idx] += nrg_change * frac_absorbed * average_yposition_of_scatter
-            tEs[x_cell_idx, y_cell_idx] += nrg_change * frac_scattered * average_time_of_scatter
-            # Advance position, time, and energy
+
+            frac_absorbed = (mesh_sigma_a[x_cell_idx, y_cell_idx] *
+                             mesh_fleck[x_cell_idx, y_cell_idx] /
+                             mesh_sigma_t[x_cell_idx, y_cell_idx])
+
+            frac_scattered = (((1.0 - mesh_fleck[x_cell_idx, y_cell_idx]) *
+                               mesh_sigma_a[x_cell_idx, y_cell_idx] +
+                               mesh_sigma_s[x_cell_idx, y_cell_idx]) /
+                              mesh_sigma_t[x_cell_idx, y_cell_idx])
+
+            # update PRIVATE tallies
+            priv_dep[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_absorbed
+            priv_scat[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_scattered
+
+            # (same scatter avg length logic)
+            average_scatter_length = (1 / mesh_sigma_t[x_cell_idx, y_cell_idx] *
+                                      (1 - (1 + mesh_sigma_t[x_cell_idx, y_cell_idx] * dist) *
+                                       np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist)) /
+                                      (1 - np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist)))
+            avg_x = xpos + xvec[0] * average_scatter_length
+            avg_y = ypos + xvec[1] * average_scatter_length
+            avg_t = ttt + average_scatter_length / phys_c
+
+            priv_xEs[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_scattered * avg_x
+            priv_yEs[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_absorbed * avg_y
+            priv_tEs[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_scattered * avg_t
+
+            # advance particle
             xpos += xvec[0] * dist
             ypos += xvec[1] * dist
             ttt += dist * phys_invc
             nrg = newnrg
-            # Boundary treatment
+
             if dist == dist_bx or dist == dist_by:
                 if dist_bx < dist_by:
                     # Moving right
@@ -1077,14 +1189,8 @@ def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a,
                             theta = np.arctan2(xreflected[1], xreflected[0])
                             continue
                         y_cell_idx -= 1
- 
 
-
-            # Check if event was census
             if dist == dist_cen:
-                # with objmode:
-                #     print(f'particle reached census')
-                # Update the particle's properties [emission_time, x_idx, y_idx, xpos, ypos, mu, frq, nrg, startnrg]
                 particle_prop[iptcl, 0] = ttt
                 particle_prop[iptcl, 1] = x_cell_idx
                 particle_prop[iptcl, 2] = y_cell_idx
@@ -1094,328 +1200,121 @@ def run_crooked_pipe(n_particles, particle_prop, current_time, dt, mesh_sigma_a,
                 particle_prop[iptcl, 6] = frq
                 particle_prop[iptcl, 7] = nrg
                 particle_prop[iptcl, 8] = startnrg
-                break  # Finish history for this particle
+                break
 
-    # Start implicit scattering process
-    epsilon = 1e-3
-    iterations = 0
-    converged = False
-    # with objmode:
-    #     plt.figure()
-    #     pc = plt.pcolormesh(mesh.x_edges,
-    #                         mesh.y_edges,
-    #                         nrgscattered.T,  # Transpose to match orientation
-    #                         cmap='inferno',
-    #                         edgecolors='k',       # 'k' for black borders around cells
-    #                         linewidth=0.5,
-    #                         shading='flat',
-    #                         norm=LogNorm())        
-    #     plt.colorbar(pc, label=f'Scattered Energy [ergs]')
-    #     # plt.clim(vmin=0.05, vmax=0.3)
-    #     plt.xlabel('x')
-    #     plt.ylabel('y')
-    #     plt.title(f'Scattered energy at t={time.time}')
-    #     plt.axis('equal')
-    #     plt.grid(True, linestyle='--', linewidth=0.5, color='white')
-    #     plt.show()
-    # Calculate zone-wise average position of scatter and average time of scatter
-    X_s = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-    Y_s = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-    T_s  = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
+    # --- Reduction step ---
+    for t in range(n_threads):
+        nrgdep += priv_dep[t]
+        nrgscattered += priv_scat[t]
+        x_Es += priv_xEs[t]
+        y_Es += priv_yEs[t]
+        tEs += priv_tEs[t]
 
-    X_s = x_Es / nrgscattered
-    Y_s = y_Es / nrgscattered
-    # Create arrays for cell-valued Chi, Gamma, and tau
-    chi = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
+    return nrgdep, nrgscattered, x_Es, y_Es, tEs
+
+
+def generate_scattered_particles(
+    nrgscattered,
+    x_Es, y_Es, t_Es,
+    mesh_x_edges, mesh_y_edges, mesh_dx, mesh_dy,
+    ptcl_max_array_size, ptcl_Nx, ptcl_Ny, ptcl_Nt, ptcl_Nmu, 
+    current_time, dt,
+):
+    """
+    Generate new scattered particles based on scattered energy tallies.
+
+    Returns
+    -------
+    scattered_particles : ndarray
+        Array of scattered particle properties [time, ix, iy, xpos, ypos, theta, frq, nrg, startnrg].
+    n_scattered_particles : int
+        Number of scattered particles generated.
+    """
+
+    num_x_cells = len(mesh_x_edges) - 1
+    num_y_cells = len(mesh_y_edges) - 1
+
+    # Allocate scattered particle array
+    scattered_particles = np.zeros((ptcl_max_array_size, 9), dtype=np.float64)
+    n_scattered_particles = 0
+
+    # Average scatter positions and times
+    X_s = np.divide(x_Es, nrgscattered, out=np.zeros_like(x_Es), where=nrgscattered > 0.0)
+    Y_s = np.divide(y_Es, nrgscattered, out=np.zeros_like(y_Es), where=nrgscattered > 0.0)
+    T_s = np.divide(t_Es, nrgscattered, out=np.zeros_like(t_Es), where=nrgscattered > 0.0)
+
+    # Allocate chi, gamma, tau per cell
+    chi   = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
     gamma = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-    tau = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-    # with objmode:
-    #     print(f'nrgdep before implicit scattering = {nrgdep}')
-    #     print(f'nrgscattered before implicit scattering = {nrgscattered}')
-    original_nrg_scattered = np.copy(nrgscattered)
-    while not converged:
-        # with objmode:
-        #     print(f'starting scattering iteration')
-        scattered_particles = np.zeros((ptcl.max_array_size, 9), dtype=np.float64)
-        n_scattered_particles = 0
-        # Store the old nrgscattered
-        old_nrg_scattered = np.copy(nrgscattered)
-        # Create source particles based on energy scattered in each cell
-        P_tally = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
+    tau   = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
 
-        nx_cells = len(mesh.x_edges) - 1
-        ny_cells = len(mesh.y_edges) - 1
+    # Loop over cells
+    for ix in range(num_x_cells):
+        for iy in range(num_y_cells):
 
-        for ix in range(nx_cells):
-            for iy in range(ny_cells):
-                
-                X_s[ix, iy] = np.round(X_s[ix, iy] - mesh.x_edges[ix], 8)
-                Y_s[ix, iy] = np.round(Y_s[ix, iy] - mesh.y_edges[iy], 8)
-                T_s[ix, iy] = np.round(T_s[ix, iy] - current_time, 8)
+            if nrgscattered[ix, iy] <= 0.0:
+                continue  # no energy to scatter
 
-                # Cell sizes
-                dy_cell = mesh.dy[iy]
-                dx_cell = mesh.dx[ix]
+            # Shifted relative averages
+            rel_X = np.round(X_s[ix, iy] - mesh_x_edges[ix], 8)
+            rel_Y = np.round(Y_s[ix, iy] - mesh_y_edges[iy], 8)
+            rel_T = np.round(T_s[ix, iy] - current_time, 8)
 
-                x_positions = mesh.x_edges[ix] + (np.arange(ptcl.Nx[ix, iy]) + 0.5) * dx_cell / ptcl.Nx[ix, iy]
-                y_positions = mesh.y_edges[iy] + (np.arange(ptcl.Ny[ix, iy]) + 0.5) * dy_cell / ptcl.Ny[ix, iy]
+            dx_cell = mesh_dx[ix]
+            dy_cell = mesh_dy[iy]
 
-                # Uniform angular spacing over [0, 2π)
-                angles = (np.arange(nmu_cell[ix, iy]) + 0.5) / nmu_cell[ix, iy] * 2.0 * np.pi
+            # Space, angle, and time grids
+            x_positions = mesh_x_edges[ix] + (np.arange(ptcl_Nx[ix, iy]) + 0.5) * dx_cell / ptcl_Nx[ix, iy]
+            y_positions = mesh_y_edges[iy] + (np.arange(ptcl_Ny[ix, iy]) + 0.5) * dy_cell / ptcl_Ny[ix, iy]
+            angles = (np.arange(ptcl_Nmu[ix, iy]) + 0.5) / ptcl_Nmu[ix, iy] * 2.0 * np.pi
+            emission_times = current_time + (np.arange(ptcl_Nt[ix, iy]) + 0.5) * dt / ptcl_Nt[ix, iy]
 
-                # Emission time spacing
-                emission_times = current_time + (np.arange(ptcl.Nt[ix, iy]) + 0.5) * dt / ptcl.Nt[ix, iy]
+            n_source_ptcls = ptcl_Nx[ix, iy] * ptcl_Ny[ix, iy] * ptcl_Nmu[ix, iy] * ptcl_Nt[ix, iy]
+            nrg = nrgscattered[ix, iy] / n_source_ptcls
 
-                # The number of source particles in the cell
-                n_source_ptcls = ptcl.Nx[ix, iy] * ptcl.Ny[ix, iy] * nmu_cell[ix, iy] * ptcl.Nt[ix, iy]
-                # with objmode:
-                #     print(f'xpositions = {x_positions}')
-                #     print(f'y_positions = {y_positions}')
-                #     print(f'angles = {angles}')
-                #     print(f'times = {emission_times}')
-                # Energy per particle
-                nrg = nrgscattered[ix, iy] / n_source_ptcls
-                startnrg = nrg
-                # Solve for chi, gamma, tau in each cell
-                with objmode:
-                    method = 'hybr'
-                    solution = root(chi_equation, 1, args=(float(0), mesh.dx[ix], mesh.dx[ix],  X_s[ix, iy]), method=method)       
-                    chi[ix, iy] = solution.x
-                    solution = root(gamma_equation, 1, args=(float(0), mesh.dy[iy], mesh.dy[iy],  Y_s[ix, iy]), method=method)       
-                    gamma[ix, iy] = solution.x
-                    solution = root(tau_equation, 1, args=(float(0), dt, dt,  T_s[ix, iy]), method=method)
-                    tau[ix, iy] = solution.x
-                # print(f'tau solved = {tau[icell]}'
-                # Create scattered particles
-                for xpos in x_positions:
-                    for ypos in y_positions:
-                        for theta in angles:
-                            for ttt in emission_times:
-                                if n_scattered_particles < ptcl.max_array_size:
-                                    rel_x = xpos - mesh.x_edges[ix]
-                                    rel_y = ypos - mesh.y_edges[iy]
-                                    P = p_x_y_t_solve(chi[ix, iy], gamma[ix, iy], tau[ix, iy], mesh.dx[ix], mesh.dy[iy], dt, 0, rel_x, 0, rel_y, 0, dt)
-                                    if P < 0:
-                                        print(f'P = {P}')
-                                        raise ValueError
-                                    P_tally[ix, iy] += P
-                                    # [emission_time, x_idx, y_idx, xpos, ypos, theta, frq, nrg, startnrg]
-                                    idx = n_scattered_particles
-                                    scattered_particles[idx, 0] = ttt  # time
-                                    scattered_particles[idx, 1] = ix  # x cell index
-                                    scattered_particles[idx, 2] = iy  # y cell index
-                                    scattered_particles[idx, 3] = xpos  # x position
-                                    scattered_particles[idx, 4] = ypos  # y position
-                                    scattered_particles[idx, 5] = theta # direction
-                                    scattered_particles[idx, 6] = 0  # frequency
-                                    scattered_particles[idx, 7] = nrg  # start energy
-                                    scattered_particles[idx, 8] = P  # start energy
-                                    n_scattered_particles += 1
-                                else:
-                                    print("Warning: Maximum number of scattered particles reached!")
-        # Put correct energy
-        for i in range(n_scattered_particles):
-            # Get P and icell
-            ix = int(scattered_particles[i, 1])
-            iy = int(scattered_particles[i, 2])
-            P = scattered_particles[i, 8]
-            # Set particle energy
-            nrg = nrgscattered[ix, iy] * P / P_tally[ix, iy]
-            # Set particle startnrg
-            scattered_particles[idx, 7] = nrg 
-        # Reset nrgscattered
-        nrgscattered = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-        x_Es = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-        y_Es = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-        tEs = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
+            # Solve for chi, gamma, tau
+            with objmode:
+                sol = root(chi_equation, 1, args=(0.0, dx_cell, dx_cell, rel_X), method='hybr')
+                chi[ix, iy] = sol.x
+                sol = root(gamma_equation, 1, args=(0.0, dy_cell, dy_cell, rel_Y), method='hybr')
+                gamma[ix, iy] = sol.x
+                sol = root(tau_equation, 1, args=(0.0, dt, dt, rel_T), method='hybr')
+                tau[ix, iy] = sol.x
 
-        # Loop over scattered particles
-        for iptcl in range(n_scattered_particles):
-            # Get particle's initial properties at start of time-step
-            ttt = scattered_particles[iptcl, 0]
-            x_cell_idx = int(scattered_particles[iptcl, 1])
-            y_cell_idx = int(scattered_particles[iptcl, 2])
-            xpos = scattered_particles[iptcl, 3]
-            ypos = scattered_particles[iptcl, 4]
-            theta = scattered_particles[iptcl, 5]
-            frq = scattered_particles[iptcl, 6]
-            nrg = scattered_particles[iptcl, 7]
-            startnrg = scattered_particles[iptcl, 8]
+            # Create scattered particles
+            for xpos in x_positions:
+                for ypos in y_positions:
+                    for theta in angles:
+                        for ttt in emission_times:
+                            if n_scattered_particles >= ptcl_max_array_size:
+                                raise RuntimeError("Maximum number of scattered particles reached")
 
-            # Loop over segments in the history
-            while True:
-                eps = 1e-12
-                xvec = np.array([np.cos(theta), np.sin(theta)])
+                            rel_x = xpos - mesh_x_edges[ix]
+                            rel_y = ypos - mesh_y_edges[iy]
 
-                # Distance to x-boundary
-                if abs(xvec[0]) < eps:
-                    dist_bx = np.inf  # particle moving almost vertical
-                elif xvec[0] > 0:
-                    x_edge = mesh.x_edges[x_cell_idx + 1]  # right edge
-                    dist_bx = (x_edge - xpos) / xvec[0]
-                else:
-                    x_edge = mesh.x_edges[x_cell_idx]      # left edge
-                    dist_bx = (x_edge - xpos) / xvec[0]
+                            P = p_x_y_t_solve(
+                                chi[ix, iy], gamma[ix, iy], tau[ix, iy],
+                                dx_cell, dy_cell, dt,
+                                0, rel_x, 0, rel_y, 0, dt
+                            )
+                            if P < 0:
+                                raise ValueError(f"Negative probability P={P}")
 
-                # Distance to y-boundary
-                if abs(xvec[1]) < eps:
-                    dist_by = np.inf  # particle moving almost horizontal
-                elif xvec[1] > 0:
-                    y_edge = mesh.y_edges[y_cell_idx + 1]  # top edge
-                    dist_by = (y_edge - ypos) / xvec[1]
-                else:
-                    y_edge = mesh.y_edges[y_cell_idx]      # bottom edge
-                    dist_by = (y_edge - ypos) / xvec[1]
+                            idx = n_scattered_particles
+                            scattered_particles[idx, 0] = ttt   # emission time
+                            scattered_particles[idx, 1] = ix    # x cell index
+                            scattered_particles[idx, 2] = iy    # y cell index
+                            scattered_particles[idx, 3] = xpos  # x position
+                            scattered_particles[idx, 4] = ypos  # y position
+                            scattered_particles[idx, 5] = theta # angle
+                            scattered_particles[idx, 6] = 0     # frequency (placeholder)
+                            scattered_particles[idx, 7] = nrg   # particle energy
+                            scattered_particles[idx, 8] = P     # probability weight
 
-                # Clamp tiny distances
-                dist_bx = max(dist_bx, eps)
-                dist_by = max(dist_by, eps)
-                
-                dist_b = min(dist_bx, dist_by)
-                # Calculate distance to census
-                dist_cen = phys_c * (endsteptime - ttt)
-                if dist_cen < 0:
-                    raise ValueError
-                # Actual distance - whichever happens first
-                dist = min(dist_b, dist_cen)
-                if dist < 0:
-                    raise ValueError
-                # print(f'dist = {dist}')
-                # Calculate new particle energy
-                newnrg = nrg * np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist)
-                # calculate energy change
-                nrg_change = nrg - newnrg
-                # Calculate fractions for absorption and scattering
-                frac_absorbed = mesh_sigma_a[x_cell_idx, y_cell_idx] * mesh_fleck[x_cell_idx, y_cell_idx] / mesh_sigma_t[x_cell_idx, y_cell_idx]
-                frac_scattered = ((1.0 - mesh_fleck[x_cell_idx, y_cell_idx]) * mesh_sigma_a[x_cell_idx, y_cell_idx] + mesh_sigma_s[x_cell_idx, y_cell_idx]) / mesh_sigma_t[x_cell_idx, y_cell_idx]
-                # update energy deposition tallies
-                nrgdep[x_cell_idx, y_cell_idx] += nrg_change * frac_absorbed
-                nrgscattered[x_cell_idx, y_cell_idx] += nrg_change * frac_scattered
-                # calculate average length of scatter
+                            n_scattered_particles += 1
 
-                average_scatter_length = 1 / mesh_sigma_t[x_cell_idx, y_cell_idx] * (1 - (1 + mesh_sigma_t[x_cell_idx, y_cell_idx] * dist) * np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist))/(1 - np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist))
-                average_xposition_of_scatter = xpos + xvec[0] * average_scatter_length
-                average_yposition_of_scatter = ypos + xvec[1] * average_scatter_length
-                average_time_of_scatter = ttt + average_scatter_length / phys_c
-                x_Es[x_cell_idx, y_cell_idx] += nrg_change * frac_scattered * average_xposition_of_scatter
-                y_Es[x_cell_idx, y_cell_idx] += nrg_change * frac_absorbed * average_yposition_of_scatter
-                tEs[x_cell_idx, y_cell_idx] += nrg_change * frac_scattered * average_time_of_scatter
-                # Advance position, time, and energy
-                xpos += xvec[0] * dist
-                ypos += xvec[1] * dist
-                ttt += dist * phys_invc
-                nrg = newnrg
-                # Boundary treatment
-                if dist == dist_bx or dist == dist_by:
-                    if dist_bx < dist_by:
-                        # Moving right
-                        if xvec[0] > 0:
-                            if x_cell_idx == num_x_cells - 1:  # Right boundary -> vacuum
-                                scattered_particles[iptcl, 7] = -1.0
-                                break
-                            x_cell_idx += 1
-                            
-                        else:
-                            # Moving left
-                            if x_cell_idx == 0:  # Left boundary -> vacuum
-                                scattered_particles[iptcl, 7] = -1.0
-                                break
-                            x_cell_idx -= 1
-                        
-                    else:
-                        # Moving up
-                        if xvec[1] > 0:
-                            if y_cell_idx == num_y_cells - 1:  # Top boundary -> vacuum
-                                scattered_particles[iptcl, 7] = -1.0
-                                break
-                            y_cell_idx += 1
+    return scattered_particles, n_scattered_particles
 
-                        else:
-                            # Moving down
-                            if y_cell_idx == 0:  # Bottom boundary -> reflecting
-                                v = np.array([0.0, 1.0])  # normal vector pointing up
-                                xreflected = xvec - v * (2 * np.dot(v, xvec))
-                                theta = np.arctan2(xreflected[1], xreflected[0])
-                                continue
-                            y_cell_idx -= 1
-    
-
-
-                # Check if event was census
-                if dist == dist_cen:
-                    # Update the particle's properties [emission_time, x_idx, y_idx, xpos, ypos, mu, frq, nrg, startnrg]
-                    scattered_particles[iptcl, 0] = ttt
-                    scattered_particles[iptcl, 1] = x_cell_idx
-                    scattered_particles[iptcl, 2] = y_cell_idx
-                    scattered_particles[iptcl, 3] = xpos
-                    scattered_particles[iptcl, 4] = ypos
-                    scattered_particles[iptcl, 5] = theta
-                    scattered_particles[iptcl, 6] = frq
-                    scattered_particles[iptcl, 7] = nrg
-                    scattered_particles[iptcl, 8] = startnrg
-                    break  # Finish history for this particle
-        X_s = x_Es / nrgscattered
-        Y_s = y_Es / nrgscattered
-        T_s = tEs / nrgscattered    
-        iterations += 1
-        
-        n_existing_particles = n_particles
-        n_total_particles = n_existing_particles + n_scattered_particles   
-
-        # Check if the combined number of particles exceeds the maximum allowed size
-        if n_total_particles > ptcl.max_array_size:
-            print("Warning: Not enough space in the global array for all scattered particles.")
-            raise ValueError
-        else:
-            n_to_add = n_scattered_particles
-        
-        # Copy particles to the global particle array
-        if n_to_add > 0:
-            # Copy relevant fields from scattered_particles to the global particle_prop array
-            particle_prop[n_existing_particles:n_existing_particles + n_to_add, :] = scattered_particles[:n_to_add, :]
-
-            # Update the global number of particles
-            n_particles = n_existing_particles + n_to_add
-
-
-        total_old_nrgscattered = np.sum(old_nrg_scattered)
-        total_new_nrgscattered = np.sum(nrgscattered)
-        total_original_nrg_scattered = np.sum(original_nrg_scattered)
-        # with objmode:
-        #     print(f'total original scattered energy = {total_original_nrg_scattered}')
-        #     print(f'total old scattered energy = {total_old_nrgscattered}')
-        #     print(f'total new scattered energy = {total_new_nrgscattered}')
-        
-        rel_remaining = total_new_nrgscattered / total_original_nrg_scattered
-
-        if rel_remaining < epsilon:
-            converged = True
-
-
-
-
-        # converged = True
-        # for k in range(thin_cells.shape[0]):
-        #     i, j = thin_cells[k]
-        #     old_val = old_nrg_scattered[i, j]
-        #     new_val = nrgscattered[i, j]
-            
-        #     # Compute relative difference
-        #     if old_val == 0.0:
-        #         diff = abs(new_val)   # fall back to absolute check if denominator is 0
-        #     else:
-        #         diff = abs(new_val - old_val) / abs(old_val)
-            
-        #     if diff >= epsilon:
-        #         converged = False
-        #         break        
-        
-    print(f'Number of scattering iterations = {iterations}')
-
-    # Deposit left over scattered energy to conserve energy
-    nrgdep += nrgscattered
-
-    return nrgdep, n_particles, particle_prop
 
 @njit
 def clean(n_particles, particle_prop):
@@ -1423,13 +1322,13 @@ def clean(n_particles, particle_prop):
     
     # Count the number of particles flagged for deletion
     n_to_remove = 0
-    for i in range(n_particles[0]):
+    for i in range(n_particles):
         if particle_prop[i][6] < 0.0:
             n_to_remove += 1
 
     # Create a new index to track the valid particles
     valid_index = 0
-    for i in range(n_particles[0]):
+    for i in range(n_particles):
         if particle_prop[i][6] >= 0.0:
             # If particle is valid, move it to the position `valid_index`
             if valid_index != i:
@@ -1437,7 +1336,7 @@ def clean(n_particles, particle_prop):
             valid_index += 1
 
     # Update the total number of active particles
-    n_particles[0] = valid_index
+    n_particles = valid_index
 
     with objmode:
         print(f'Number of particles removed = {n_to_remove}')
@@ -1484,3 +1383,217 @@ def clean2D(n_particles, particle_prop, energy_col=7):
     print("Number of particles remaining =", n_particles)
 
     return n_particles, particle_prop
+
+@njit
+def distance_to_boundary_1D(xpos: float,
+                            mu: float,
+                            left_boundary: float,
+                            right_boundary: float
+) -> float:
+    """
+    Calculate the distance to the spatial boundary in 1D geometry.
+
+    Parameters
+    ----------
+    xpos: float
+        Current particle position.
+
+    mu: float
+        Direction cosine of the particle's motion.
+        Positive mu means motion toward the right boundary.
+        Negative mu means motion toward the left boundary.
+
+    left_boundary: float
+        Position of the left spatial boundary.
+
+    right_boundary: float
+        Position of the rightmost spatial boundary.
+
+    Returns
+    -------
+
+    dist_b: float
+        Distance from the particle to the next spatial boundary along its
+        direction of motion.
+    
+    Raises
+    ------
+    ValueError
+        If the calculated distance is zero or negative.
+
+    """
+    if mu > 0.0:
+        dist_b = (right_boundary - xpos) / mu
+    else:
+        dist_b = (left_boundary - xpos) / mu
+
+    if dist_b <= 0.0:
+        print("Bad distance:", dist_b, xpos, mu, left_boundary, right_boundary)
+        raise ValueError
+    return dist_b
+
+@njit
+def distance_to_boundary_2D(
+    xpos: float,
+    ypos: float,
+    theta: float,
+    left_boundary: float,
+    right_boundary: float,
+    bottom_boundary: float,
+    top_boundary: float
+):
+    """
+    Calculate the distance to the nearest spatial boundary in 2D geometry,
+    handling corners.
+
+    Parameters
+    ----------
+    xpos, ypos : float
+        Current particle position.
+    theta : float
+        Particle motion direction [0, 2pi].
+    left_boundary, right_boundary : float
+        X-boundary positions.
+    bottom_boundary, top_boundary : float
+        Y-boundary positions.
+
+    Returns
+    -------
+    dist_b : float
+        Distance to the nearest boundary.
+    boundaries_hit : int[2]
+        Integer array of boundaries hit:
+        0 = left, 1 = right, 2 = bottom, 3 = top.
+        If only one boundary is hit, second slot is -1.
+        If a corner is hit, both slots are filled.
+    """
+    cos_theta = np.cos(theta)
+    sin_theta = np.sin(theta)
+
+    # Initialize large distances
+    dist_x = 1e20
+    dist_y = 1e20
+    boundary_x = -1
+    boundary_y = -1
+
+    # Distance to x-boundaries
+    if cos_theta > 0.0:
+        dist_x = (right_boundary - xpos) / cos_theta
+        boundary_x = 1  # right
+    elif cos_theta < 0.0:
+        dist_x = (left_boundary - xpos) / cos_theta
+        boundary_x = 0  # left
+
+    # Distance to y-boundaries
+    if sin_theta > 0.0:
+        dist_y = (top_boundary - ypos) / sin_theta
+        boundary_y = 3  # top
+    elif sin_theta < 0.0:
+        dist_y = (bottom_boundary - ypos) / sin_theta
+        boundary_y = 2  # bottom
+
+    # Choose the smallest positive distance
+    boundaries_hit = np.full(2, -1)  # default: no second boundary
+    if dist_x < dist_y:
+        dist_b = dist_x
+        boundaries_hit[0] = boundary_x
+    elif dist_y < dist_x:
+        dist_b = dist_y
+        boundaries_hit[0] = boundary_y
+    else:  # dist_x == dist_y -> corner
+        dist_b = dist_x
+        boundaries_hit[0] = boundary_x
+        boundaries_hit[1] = boundary_y
+
+    # Safety check
+    if dist_b <= 0.0:
+        print("Bad distance:", dist_b, xpos, ypos, theta, left_boundary, right_boundary, bottom_boundary, top_boundary)
+        raise ValueError
+
+    return dist_b, boundaries_hit
+
+@njit
+def distance_to_census(c: float,
+                       current_time: float,
+                       end_time: float
+) -> float:
+    """
+    Calculate the distance for a particle to reach census.
+
+    Parameters
+    ----------
+    c: float
+        The speed of light in a vacuum.
+
+    current_time: float
+        The particle's current time.
+
+    end_time: float
+        The time at the end of the time step.
+
+    Returns
+    -------
+
+    dist_census: float
+        Distance travelled for the particle to reach census.
+    
+    Raises
+    ------
+    ValueError
+        If the calculated distance is zero or negative.
+
+    """
+    dist_census = c * (end_time - current_time)
+
+    if dist_census <= 0.0:
+        print("Bad distance:", dist_census, c, end_time, current_time)
+        raise ValueError
+    
+    return dist_census
+
+@njit
+def distance_to_collision(sigma_a: float,
+                          sigma_s: float,
+                          fleck: float
+) -> float:
+    """
+    Calculate the distance for a particle to collide.
+
+    Parameters
+    ----------
+    sigma_a: float
+        The absorption opacity in the cell.
+
+    sigma_s: float
+        The real scattering opacity in the cell (as opposed to effective scatter).
+
+    fleck: float
+        The fleck factor in the cell, which should be between 0 and 1.
+
+    Returns
+    -------
+
+    dist_coll: float
+        Distance travelled for the particle to collide.
+    
+    Raises
+    ------
+    ValueError
+        If the calculated distance is zero or negative.
+
+    """
+    # Compute the total scattering opacity (both real and effective)
+    sigma_s_total = sigma_s + (1.0 - fleck) * sigma_a
+
+    # Check for invalid opacity
+    if sigma_s_total <= 0.0:
+        raise ValueError
+
+    # Sample distance to collision
+    xi = np.random.uniform()
+    dist_coll = -np.log(xi) / sigma_s_total
+
+    if dist_coll <= 0.0:
+        raise ValueError
+    
+    return dist_coll
