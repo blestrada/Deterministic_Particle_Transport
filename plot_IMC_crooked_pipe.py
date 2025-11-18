@@ -6,7 +6,7 @@ import matplotlib.animation as animation
 
 # Load your CSV
 df = pd.read_csv("temperature_history.csv")
-df_imc = pd.read_csv("temperature_history_IMC2.csv")
+df_imc = pd.read_csv("temperature_history_IMC_2e6.csv")
 
 # Define the indices of interest
 point_1_indices = [
@@ -50,6 +50,11 @@ def get_avg_temp(df, indices):
     df_filtered = df[mask]
     return df_filtered.groupby("time")["temp"].mean().reset_index()
 
+def get_avg_rad_temp(df, indices):
+    index_set = set(indices)
+    mask = df.apply(lambda row: (row["x_idx"], row["y_idx"]) in index_set, axis=1)
+    df_filtered = df[mask]
+    return df_filtered.groupby("time")["radtemp"].mean().reset_index()
 
 # Define your edges (convert to numpy arrays for safety)
 x_edges = np.array([
@@ -83,7 +88,7 @@ df_final = df[df["time"] == final_time]
 
 # Pivot into 2D array
 temp_grid = df_final.pivot(index="x_idx", columns="y_idx", values="temp").values
-
+rad_temp_grid = df_final.pivot(index="x_idx", columns="y_idx", values="radtemp").values
 # --- Plot ---
 
 plt.figure()
@@ -103,47 +108,65 @@ plt.title(f"Temperature at t={final_time}")
 plt.tight_layout
 plt.show()
 
+plt.figure()
+pc = plt.pcolormesh(x_edges,
+                    y_edges,
+                    rad_temp_grid.T,   # Transpose to match orientation
+                    cmap="inferno",
+                    shading="flat")
+plt.colorbar(pc, label="Temperature [keV]")
+plt.clim(vmin=0.05, vmax=0.3)
+plt.xlabel("x")
+plt.ylabel("y")
+plt.xlim(x_edges[0], x_edges[-1])
+plt.ylim(0,2)
+plt.axis('scaled')
+plt.title(f"Radiation Temperature at t={final_time}")
+plt.tight_layout
+plt.show()
+
+
 # Make an animation of the material temperature over time.
 
 # --- Animation setup ---
-times = sorted(df["time"].unique())  # all time points
-temp_min, temp_max = 0.05, 0.3       # fixed color scale for consistency
+# times = sorted(df["time"].unique())  # all time points
+# temp_min, temp_max = 0.05, 0.3       # fixed color scale for consistency
 
-fig, ax = plt.subplots(figsize=(6, 5))
+# fig, ax = plt.subplots(figsize=(6, 5))
 
-pc = ax.pcolormesh(
-    x_edges,
-    y_edges,
-    np.zeros((len(y_edges)-1, len(x_edges)-1)),  # placeholder array
-    cmap="inferno",
-    shading="flat"
-)
-cbar = fig.colorbar(pc, ax=ax, label="Temperature [keV]")
-pc.set_clim(vmin=temp_min, vmax=temp_max)
+# pc = ax.pcolormesh(
+#     x_edges,
+#     y_edges,
+#     np.zeros((len(y_edges)-1, len(x_edges)-1)),  # placeholder array
+#     cmap="inferno",
+#     shading="flat"
+# )
+# cbar = fig.colorbar(pc, ax=ax, label="Temperature [keV]")
+# pc.set_clim(vmin=temp_min, vmax=temp_max)
 
-ax.set_xlabel("x")
-ax.set_ylabel("y")
-ax.set_xlim(x_edges[0], x_edges[-1])
-ax.set_ylim(0, 2)
-ax.set_aspect("equal")
-title = ax.set_title("")
+# ax.set_xlabel("x")
+# ax.set_ylabel("y")
+# ax.set_xlim(x_edges[0], x_edges[-1])
+# ax.set_ylim(0, 2)
+# ax.set_aspect("equal")
+# title = ax.set_title("")
 
-def update(frame):
-    t = times[frame]
-    df_t = df[df["time"] == t]
-    temp_grid = df_t.pivot(index="x_idx", columns="y_idx", values="temp").values
-    pc.set_array(temp_grid.T.ravel())  # update color values
-    title.set_text(f"Temperature at t={t:.3e}")
-    return pc, title
+# def update(frame):
+#     t = times[frame]
+#     df_t = df[df["time"] == t]
+#     temp_grid = df_t.pivot(index="x_idx", columns="y_idx", values="temp").values
+#     pc.set_array(temp_grid.T.ravel())  # update color values
+#     title.set_text(f"Temperature at t={t:.3e}")
+#     return pc, title
 
-ani = animation.FuncAnimation(
-    fig, update, frames=len(times), blit=False, interval=200
-)
+# ani = animation.FuncAnimation(
+#     fig, update, frames=len(times), blit=False, interval=200
+# )
 
-# Save as mp4 (requires ffmpeg installed)
-ani.save("temperature_evolution.mp4", writer="ffmpeg", dpi=150)
+# # Save as mp4 (requires ffmpeg installed)
+# ani.save("temperature_evolution.mp4", writer="ffmpeg", dpi=150)
 
-plt.close(fig)  # close figure to avoid extra static plot
+# plt.close(fig)  # close figure to avoid extra static plot
 
 
 # Plot Fiducial Points
@@ -155,43 +178,78 @@ avg_temp_point3 = get_avg_temp(df, point_3_indices)
 avg_temp_point4 = get_avg_temp(df, point_4_indices)
 avg_temp_point5 = get_avg_temp(df, point_5_indices)
 
+avg_radtemp_point1 = get_avg_rad_temp(df, point_1_indices)
+avg_radtemp_point2 = get_avg_rad_temp(df, point_2_indices)
+avg_radtemp_point3 = get_avg_rad_temp(df, point_3_indices)
+avg_radtemp_point4 = get_avg_rad_temp(df, point_4_indices)
+avg_radtemp_point5 = get_avg_rad_temp(df, point_5_indices)
+
 avg_temp_point1_imc = get_avg_temp(df_imc, point_1_indices)
 avg_temp_point2_imc = get_avg_temp(df_imc, point_2_indices)
 avg_temp_point3_imc = get_avg_temp(df_imc, point_3_indices)
 avg_temp_point4_imc = get_avg_temp(df_imc, point_4_indices)
 avg_temp_point5_imc = get_avg_temp(df_imc, point_5_indices)
 
-
+avg_radtemp_point1_imc = get_avg_rad_temp(df_imc, point_1_indices)
+avg_radtemp_point2_imc = get_avg_rad_temp(df_imc, point_2_indices)
+avg_radtemp_point3_imc = get_avg_rad_temp(df_imc, point_3_indices)
+avg_radtemp_point4_imc = get_avg_rad_temp(df_imc, point_4_indices)
+avg_radtemp_point5_imc = get_avg_rad_temp(df_imc, point_5_indices)
+print(f'finished getting averages')
 plt.figure(figsize=(8,6))
-markersize=5.0
-# DPT
-plt.scatter(avg_temp_point1["time"], avg_temp_point1["temp"], 
-         marker="o", color="blue", label="DPT", s=markersize)
-plt.scatter(avg_temp_point2["time"], avg_temp_point2["temp"], 
-         marker="o", color="blue", s=markersize)
-plt.scatter(avg_temp_point3["time"], avg_temp_point3["temp"], 
-         marker="o", color="blue", s=markersize)
-plt.scatter(avg_temp_point4["time"], avg_temp_point4["temp"], 
-         marker="o", color="blue", s=markersize)
-plt.scatter(avg_temp_point5["time"], avg_temp_point5["temp"], 
-         marker="o", color="blue", s=markersize)
+markersize=10.0
 
-# IMC
-plt.scatter(avg_temp_point1_imc["time"], avg_temp_point1_imc["temp"], 
-         marker="o", color="red", label="IMC", s=markersize)
-plt.scatter(avg_temp_point2_imc["time"], avg_temp_point2_imc["temp"], 
-         marker="o", color="red", s=markersize)
-plt.scatter(avg_temp_point3_imc["time"], avg_temp_point3_imc["temp"], 
-         marker="o", color="red", s=markersize)
-plt.scatter(avg_temp_point4_imc["time"], avg_temp_point4_imc["temp"], 
-         marker="o", color="red", s=markersize)
-plt.scatter(avg_temp_point5_imc["time"], avg_temp_point5_imc["temp"], 
-         marker="o", color="red", s=markersize)
+# DPT temp
+plt.plot(avg_temp_point1["time"], avg_temp_point1["temp"], 
+         marker="+", color="red", label="DPT Tm")
+plt.plot(avg_temp_point2["time"], avg_temp_point2["temp"], 
+         marker="+", color="red",)
+plt.plot(avg_temp_point3["time"], avg_temp_point3["temp"], 
+         marker="+", color="red", )
+# plt.plot(avg_temp_point4["time"], avg_temp_point4["temp"], 
+#          marker="+", color="red", )
+# plt.plot(avg_temp_point5["time"], avg_temp_point5["temp"], 
+#          marker="+", color="red", )
+
+# DPT rad temp
+plt.plot(avg_radtemp_point1["time"], avg_radtemp_point1["radtemp"], 
+         marker="+", color="blue", label="DPT Tr", )
+plt.plot(avg_radtemp_point2["time"], avg_radtemp_point2["radtemp"], 
+         marker="+", color="blue", )
+plt.plot(avg_radtemp_point3["time"], avg_radtemp_point3["radtemp"], 
+         marker="+", color="blue", )
+# plt.plot(avg_radtemp_point4["time"], avg_radtemp_point4["radtemp"], 
+#          marker="+", color="blue", )
+# plt.plot(avg_radtemp_point5["time"], avg_radtemp_point5["radtemp"], 
+#          marker="+", color="blue", )
+
+# IMC temp
+plt.plot(avg_temp_point1_imc["time"], avg_temp_point1_imc["temp"], 
+         marker="x", color="red", label="IMC Tm", )
+plt.plot(avg_temp_point2_imc["time"], avg_temp_point2_imc["temp"], 
+         marker="x", color="red", )
+plt.plot(avg_temp_point3_imc["time"], avg_temp_point3_imc["temp"], 
+         marker="x", color="red", )
+# plt.plot(avg_temp_point4_imc["time"], avg_temp_point4_imc["temp"], 
+#          marker="x", color="red", )
+# plt.plot(avg_temp_point5_imc["time"], avg_temp_point5_imc["temp"], 
+#          marker="x", color="red", )
+# IMC rad temp
+plt.plot(avg_radtemp_point1_imc["time"], avg_radtemp_point1_imc["radtemp"], 
+         marker="x", color="blue", label="IMC Tr", )
+plt.plot(avg_radtemp_point2_imc["time"], avg_radtemp_point2_imc["radtemp"], 
+         marker="x", color="blue", )
+plt.plot(avg_radtemp_point3_imc["time"], avg_radtemp_point3_imc["radtemp"], 
+         marker="x", color="blue", )
+# plt.plot(avg_radtemp_point4_imc["time"], avg_radtemp_point4_imc["radtemp"], 
+#          marker="x", color="blue", )
+# plt.plot(avg_radtemp_point5_imc["time"], avg_radtemp_point5_imc["radtemp"], 
+#          marker="x", color="blue", )
 
 
 
 plt.xlabel("Time [sh]")
-plt.ylabel("Material Temperature [keV]")
+plt.ylabel("Temperature [keV]")
 plt.xscale("log")
 # plt.yscale("log")
 plt.xlim(1e-3, 100.0)

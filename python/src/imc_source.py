@@ -810,7 +810,7 @@ def imc_source_particles2D(
         for _ in range(n_surf):
             if n_particles >= max_particles:
                 raise RuntimeError("Maximum number of particles reached in surface source.")
-            xpos = 0.0
+            xpos = 1e-12
             ypos = np.random.uniform(0, 0.5)  
             # Cell indices
             x_idx = np.searchsorted(mesh_x_edges, xpos) - 1
@@ -819,9 +819,10 @@ def imc_source_particles2D(
             ttt = current_time + np.random.uniform() * dt
             frq = 0.0
             theta = np.random.uniform(-0.5*np.pi, 0.5*np.pi)  # rightward hemisphere
+            mu = 2 * np.random.uniform() - 1.0
             # Store
             particle_prop[n_particles] = [
-                ttt, x_idx, y_idx, xpos, ypos, theta, frq, nrg, startnrg
+                ttt, x_idx, y_idx, xpos, ypos, mu, theta, frq, nrg, startnrg
             ]
             n_particles += 1
 
@@ -844,9 +845,10 @@ def imc_source_particles2D(
                         ttt = current_time + np.random.uniform() * dt
                         frq = 0.0
                         theta = np.random.uniform(0.0, 2.0*np.pi)  # isotropic
+                        mu = 2 * np.random.uniform() - 1.0
                         # Store
                         particle_prop[n_particles] = [
-                            ttt, x_idx, y_idx, xpos, ypos, theta, frq, nrg, startnrg
+                            ttt, x_idx, y_idx, xpos, ypos, mu, theta, frq, nrg, startnrg
                         ]
                         n_particles += 1
 
@@ -876,9 +878,9 @@ def run2D(fleck, temp, sigma_a, particle_prop, n_particles, current_time, dt, me
     return n_particles, particle_prop
 
 
-def crooked_pipe_surface_particles(n_particles, particle_prop, surface_Ny, surface_Nmu, surface_Nt, current_time, dt, mesh_y_edges):
+def crooked_pipe_surface_particles(n_particles, particle_prop, surface_Ny, surface_Nmu, surface_N_omega, surface_Nt, current_time, dt, mesh_y_edges):
     """Creates surface source particles for the boundary condition"""
-    T_surf = 0.3  # keV
+    T_surf = bcon.T0  # keV
     surface_length = 0.5 # cm
     e_surf = phys.sb * (T_surf ** 4) * dt * surface_length # surface energy over dt
     print(f'Total energy emitted by the surface = {e_surf}')
@@ -886,15 +888,21 @@ def crooked_pipe_surface_particles(n_particles, particle_prop, surface_Ny, surfa
     y_values = 0.0 + ((np.arange(surface_Ny) + 0.5) / surface_Ny) * 0.5
     # print(f'y_values = {y_values}')
 
-    xi = (np.arange(surface_Nmu) + 0.5) / surface_Nmu
-    angles = np.arcsin(2*xi - 1)   # θ in [-π/2, π/2], Lambertian
-    # print(f'angles = {angles}')
+    # Generate mu and omega parameters
+    mu_values = -1.0 + ((np.arange(surface_Nmu)) + 0.5) * 2 / surface_Nmu
+    # print(f'mu_values = {mu_values}')
+
+    range_width = np.pi
+    min_omega = -np.pi / 2
+    # print(f'surface_n_omega = {surface_N_omega}')
+    omega_values = min_omega + ((np.arange(surface_N_omega)) + 0.5) * range_width / surface_N_omega
+    # print(f'omega_values = {omega_values}')
 
     # Emission times evenly spaced over dt
     emission_times = current_time + (np.arange(surface_Nt) + 0.5) * dt / surface_Nt
 
     # Total number of source particles
-    n_source_ptcls = len(y_values) * len(emission_times) * len(angles)
+    n_source_ptcls = len(y_values) * len(emission_times) * len(mu_values) * len(omega_values)
     print(f'Number of surface source particles = {n_source_ptcls}')
 
     # Energy per particle
@@ -908,17 +916,17 @@ def crooked_pipe_surface_particles(n_particles, particle_prop, surface_Ny, surfa
         y_idx = np.searchsorted(mesh_y_edges, ypos) - 1
         if y_idx < 0 or y_idx >= len(mesh_y_edges) - 1:
             raise ValueError(f"y={ypos} is outside mesh_y_edges range")
-
-        for theta in angles:
-            for ttt in emission_times:
-                if n_particles < part.max_array_size:
-                    startnrg = nrg
-                    # Assign: [emission_time, x_idx, y_idx, xpos, ypos, mu, frq, nrg, startnrg]
-                    particle_prop[n_particles] = [ttt, x_idx, y_idx, xpos, ypos, theta, 0, nrg, startnrg]
-                    n_particles += 1
-                else:
-                    print("Warning: Maximum number of particles reached!")
-                    return n_particles, particle_prop
+        for mu in mu_values:
+            for omega in omega_values:
+                for ttt in emission_times:
+                    if n_particles < part.max_array_size:
+                        startnrg = nrg
+                        # Assign: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
+                        particle_prop[n_particles] = [ttt, x_idx, y_idx, xpos, ypos, mu, omega, 0, nrg, startnrg]
+                        n_particles += 1
+                    else:
+                        print("Warning: Maximum number of particles reached!")
+                        return n_particles, particle_prop
 
     return n_particles, particle_prop
 
@@ -938,14 +946,21 @@ def crooked_pipe_body_particles(n_particles, particle_prop, current_time, dt, me
             x_positions = mesh_x_edges[ix] + (np.arange(part.Nx[ix, iy]) + 0.5) * dx_cell / part.Nx[ix, iy]
             y_positions = mesh_y_edges[iy] + (np.arange(part.Ny[ix, iy]) + 0.5) * dy_cell / part.Ny[ix, iy]
 
-            # Uniform angular spacing over [0, 2π)
+            # Generate angles
             nmu_cell = int(part.Nmu[ix, iy])
-            angles = (np.arange(nmu_cell) + 0.5) / nmu_cell * 2.0 * np.pi
+            n_omega_cell = int(part.N_omega[ix, iy])
+
+            mu_values = -1.0 + ((np.arange(nmu_cell)) + 0.5) * 2 / nmu_cell
+            # print(f'mu_values = {mu_values}')
+
+            omega_values = (0.0 + (np.arange(n_omega_cell) + 0.5)) * 2 * np.pi / n_omega_cell
+            # print(f'omega_values = {omega_values}')
+
             # Emission time spacing
             emission_times = current_time + (np.arange(part.Nt[ix, iy]) + 0.5) * dt / part.Nt[ix, iy]
 
             # The number of source particles in the cell
-            n_source_ptcls = part.Nx[ix, iy] * part.Ny[ix, iy] * nmu_cell * part.Nt[ix, iy]
+            n_source_ptcls = part.Nx[ix, iy] * part.Ny[ix, iy] * nmu_cell * n_omega_cell * part.Nt[ix, iy]
 
             # Energy per particle
             nrg = (phys.c * mesh_fleck[ix, iy] * mesh_sigma_a[ix, iy] *
@@ -957,14 +972,15 @@ def crooked_pipe_body_particles(n_particles, particle_prop, current_time, dt, me
             # Loop to create particles
             for xpos in x_positions:
                 for ypos in y_positions:
-                    for theta in angles:
-                        for ttt in emission_times:
-                            if n_particles < part.max_array_size:
-                                # Assign: [emission_time, x_idx, y_idx, xpos, ypos, mu, frq, nrg, startnrg]
-                                particle_prop[n_particles] = [ttt, ix, iy, xpos, ypos, theta, 0, nrg, startnrg]
-                                n_particles += 1
-                            else:
-                                print("Warning: Maximum number of particles reached!")
+                    for mu in mu_values:
+                        for omega in omega_values:
+                            for ttt in emission_times:
+                                if n_particles < part.max_array_size:
+                                    # Assign: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
+                                    particle_prop[n_particles] = [ttt, ix, iy, xpos, ypos, mu, omega, 0, nrg, startnrg]
+                                    n_particles += 1
+                                else:
+                                    print("Warning: Maximum number of particles reached!")
     print(f"Added {n_particles - start_count} body-source particles.")
     
     e_body = np.zeros((len(mesh_dx), len(mesh_dy)))

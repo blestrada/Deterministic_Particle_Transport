@@ -124,6 +124,8 @@ def read(input_file):
             elif keyw == 'ns':
                 part.n_input = int(keyv)
 
+            elif keyw == 'N_omega':
+                part.N_omega = int(keyv)
             else:
                 continue
 

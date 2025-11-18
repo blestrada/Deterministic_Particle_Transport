@@ -730,17 +730,15 @@ def crooked_pipe(output_file):
     print(f'thick_opacity = {thick_opacity} [1/cm]')
     mat.rho = np.full((num_x_idx, num_y_idx), thick_density)  # Start with thick
     mesh.sigma_a = np.full((num_x_idx, num_y_idx), thick_opacity)
-
+    part.N_omega = 10
     # Convert sourcing info into arrays
     if part.mode == 'nrn':
         part.Nmu = np.full((num_x_idx, num_y_idx), part.Nmu)
-        part.Nx = np.full((num_x_idx, num_y_idx), 1)
-        part.Ny = np.full((num_x_idx, num_y_idx), 1)
-        part.Nt = np.full((num_x_idx, num_y_idx), 1)
-    cell_Nt = 5
-    cell_Nx = 5
-    cell_Ny = 5
-    cell_Nmu = 8
+        part.N_omega = np.full((num_x_idx, num_y_idx), part.N_omega)
+        part.Nx = np.full((num_x_idx, num_y_idx), part.Nx)
+        part.Ny = np.full((num_x_idx, num_y_idx), part.Ny)
+        part.Nt = np.full((num_x_idx, num_y_idx), part.Nt)
+
     # Assign thin densities to the thin regions
     # Loop over each cell (i = x index, j = y index)
     for i in range(num_x_idx):
@@ -754,51 +752,30 @@ def crooked_pipe(output_file):
             if x_right <= 2.5 and y_top <= 0.5:
                 mat.rho[i, j] = thin_density
                 mesh.sigma_a[i,j] = thin_opacity
-                if part.mode == 'nrn':
-                    part.Nmu[i,j] = cell_Nmu
-                    part.Nx[i,j] = cell_Nx
-                    part.Ny[i,j] = cell_Ny
-                    part.Nt[i,j] = cell_Nt
+                    
 
             # Region 2: Vertical left gap
             if 2.5 <= x_left <= 3.0 and y_top <= 1.5:
                 mat.rho[i, j] = thin_density
                 mesh.sigma_a[i,j] = thin_opacity
-                if part.mode == 'nrn':
-                    part.Nmu[i,j] = cell_Nmu
-                    part.Nx[i,j] = cell_Nx
-                    part.Ny[i,j] = cell_Ny
-                    part.Nt[i,j] = cell_Nt
-
+                
             # Region 3: Horizontal middle strip
             if 3.0 <= x_left <= 4.0 and (y_bot < 1.5 and y_top >= 1.00):
                 mat.rho[i, j] = thin_density
                 mesh.sigma_a[i,j] = thin_opacity
-                if part.mode == 'nrn':
-                    part.Nmu[i,j] = cell_Nmu
-                    part.Nx[i,j] = cell_Nx
-                    part.Ny[i,j] = cell_Ny
-                    part.Nt[i,j] = cell_Nt
+                    
 
             # Region 4: Vertical right gap
             if 4.0 <= x_left <= 4.5 and y_top <= 1.5:
                 mat.rho[i, j] = thin_density
                 mesh.sigma_a[i,j] = thin_opacity
-                if part.mode == 'nrn':
-                    part.Nmu[i,j] = cell_Nmu
-                    part.Nx[i,j] = cell_Nx
-                    part.Ny[i,j] = cell_Ny
-                    part.Nt[i,j] = cell_Nt
+                
 
             # Region 5: Bottom right
             if x_left >= 4.5 and y_top <= 0.5:
                 mat.rho[i, j] = thin_density
                 mesh.sigma_a[i,j] = thin_opacity
-                if part.mode == 'nrn':
-                    part.Nmu[i,j] = cell_Nmu
-                    part.Nx[i,j] = cell_Nx
-                    part.Ny[i,j] = cell_Ny
-                    part.Nt[i,j] = cell_Nt
+                
     mesh.thin_cells = (mesh.sigma_a == thin_opacity)
     # mesh.thin_cells = np.argwhere(mesh.sigma_a == thin_opacity)
     mesh.thick_cells = (mesh.sigma_a == thick_opacity)
@@ -812,28 +789,30 @@ def crooked_pipe(output_file):
     print(f'shape of mesh.sigma_t = {mesh.sigma_t.shape}')
     mat.b = np.full((num_x_idx, num_y_idx), 1.e15)         # ion specific heat [ergs/gm-keV]
     mat.b = mat.b * mat.rho  # converted to [ergs/cm^3-keV]
-    mat.b[mesh.thick_cells] = 2.0 # jk/cm^3-keV
+    mat.b[mesh.thick_cells] = 1.0 # jk/cm^3-keV
     mat.b[mesh.thin_cells] = 1e-3 # jk/cm^3-keV
 
     print(f'mat.b = {mat.b}')
-    # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, frq, nrg, startnrg]
+    # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
     part.max_array_size = 500_000_000
-    part.particle_prop = np.zeros((part.max_array_size, 9), dtype=np.float64)
+    part.particle_prop = np.zeros((part.max_array_size, 10), dtype=np.float64)
     part.n_particles = 0
 
 
     # Set start time and time-step
     time.time = 0.0
     time.dt = 0.001    # shakes
-    time.dt_max = 1.0  # shakes
-    t_final = 100.0
+    time.dt_max = 0.05  # shakes
+    t_final = 10.0
     time.dt_rampfactor = 1.1
-    part.surface_Nmu = 50
-    part.surface_Ny = 20
-    part.surface_Nt = 100
+    part.surface_Nmu = 4
+    part.surface_N_omega = 12
+    part.surface_Ny = 50
+    part.surface_Nt = 50
     bcon.T0 = 0.3 # keV
-    part.n_input = 600_000
+    part.n_input = 500_000
     parallel = True
+
     # Loop over timesteps
     records = []
     try:
@@ -866,14 +845,14 @@ def crooked_pipe(output_file):
                 if part.mode == 'nrn':
                     # Source new surface particles
                     # print(f'surface_Ny = {part.surface_Ny}, surface_Nmu = {part.surface_Nmu}')
-                    part.n_particles, part.particle_prop = imc_source.crooked_pipe_surface_particles(part.n_particles, part.particle_prop, part.surface_Ny, part.surface_Nmu, part.surface_Nt, time.time, time.dt, mesh.y_edges)
+                    part.n_particles, part.particle_prop = imc_source.crooked_pipe_surface_particles(part.n_particles, part.particle_prop, part.surface_Ny, part.surface_Nmu, part.surface_N_omega, part.surface_Nt, time.time, time.dt, mesh.y_edges)
                     # Source new body source particles
                     part.n_particles, part.particle_prop = imc_source.crooked_pipe_body_particles(part.n_particles, part.particle_prop, time.time, time.dt, mesh.y_edges, mesh.x_edges, mesh.temp, mesh.dx, mesh.dy, mesh.fleck, mesh.sigma_a)
                 elif part.mode == 'rn':
                     part.n_particles, part.particle_prop = imc_source.run2D(mesh.fleck, mesh.temp, mesh.sigma_a, part.particle_prop, part.n_particles, time.time, time.dt, mesh.dx, mesh.dy, mesh.x_edges, mesh.y_edges)
                 
                 # Check for energies
-                negative_energy_indices = np.where(part.particle_prop[:part.n_particles, 7] < 0.0)[0]
+                negative_energy_indices = np.where(part.particle_prop[:part.n_particles, 8] < 0.0)[0]
                 if negative_energy_indices.size > 0:
                     raise RuntimeError(
                         f"Found {negative_energy_indices.size} particles with negative energy after sourcing! "
@@ -893,7 +872,7 @@ def crooked_pipe(output_file):
                         original_nrg_scattered = np.copy(nrgscattered)
 
                         # Step 2: Implicit scattering loop
-                        epsilon = 1e-3
+                        epsilon = 1e-4
                         iterations = 0
                         converged = False
 
@@ -902,7 +881,7 @@ def crooked_pipe(output_file):
                             scattered_particles, n_scattered_particles = imc_track.generate_scattered_particles(
                                 nrgscattered, x_Es, y_Es, tEs,
                                 mesh.x_edges, mesh.y_edges, mesh.dx, mesh.dy,
-                                part.max_array_size, part.Nx, part.Ny, part.Nt, part.Nmu,
+                                part.max_array_size, part.Nx, part.Ny, part.Nt, part.Nmu, part.N_omega,
                                 time.time, time.dt
                             )
 
@@ -940,14 +919,14 @@ def crooked_pipe(output_file):
                     # Test RN version
                     # mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run2D(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck)
                 elif part.mode == 'rn':
-                    mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run2D(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck)
+                    mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run2D(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mesh.x_edges, mesh.y_edges)
                 # print(f'mesh.nrgdep = {mesh.nrgdep}')
 
                 # Clean up particles that had their energy set to -1.0
                 part.n_particles, part.particle_prop = imc_track.clean2D(part.n_particles, part.particle_prop)
                 
                 # Check for energies
-                negative_energy_indices = np.where(part.particle_prop[:part.n_particles, 7] < 0.0)[0]
+                negative_energy_indices = np.where(part.particle_prop[:part.n_particles, 8] < 0.0)[0]
                 if negative_energy_indices.size > 0:
                     raise RuntimeError(
                         f"Found {negative_energy_indices.size} particles with negative energy after cleaning! "
@@ -981,7 +960,8 @@ def crooked_pipe(output_file):
                             "time": time.time,
                             "x_idx": i,
                             "y_idx": j,
-                            "temp": mesh.temp[i, j]
+                            "temp": mesh.temp[i, j],
+                            "radtemp": mesh.radtemp[i, j]
                         })
                 # plt.figure()
                 # pc = plt.pcolormesh(mesh.x_edges,
@@ -1005,18 +985,18 @@ def crooked_pipe(output_file):
         plt.figure()
         pc = plt.pcolormesh(mesh.x_edges,
                             mesh.y_edges,
-                            mesh.temp.T,  # Transpose to match orientation
-                            cmap='inferno',
-                            edgecolors='k',       # 'k' for black borders around cells
-                            linewidth=0.5,
-                            shading='flat')        
-        plt.colorbar(pc, label=f'Temperature [keV]')
-        plt.clim(vmin=0.05, vmax=0.3)
-        plt.xlabel('x')
-        plt.ylabel('y')
-        plt.title(f'Temperature at t={time.time}')
-        plt.axis('equal')
-        plt.grid(True, linestyle='--', linewidth=0.5, color='white')
+                            mesh.temp.T,   # Transpose to match orientation
+                            cmap="inferno",
+                            shading="flat")
+        plt.colorbar(pc, label="Temperature [keV]")
+        plt.clim(vmin=0.05, vmax=bcon.T0)
+        plt.xlabel("x")
+        plt.ylabel("y")
+        plt.xlim(mesh.x_edges[0], mesh.x_edges[-1])
+        plt.ylim(0,2)
+        plt.axis('scaled')
+        plt.title(f"Temperature at t={t_final}")
+        plt.tight_layout
         plt.show()
         plt.figure()
         pc = plt.pcolormesh(mesh.x_edges,

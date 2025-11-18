@@ -4,10 +4,12 @@
 Nx = None
 Ny = None
 Nmu = None
+N_omega = None
 Nt = None
 Ng = None
 surface_Ny = None
 surface_Nmu = None
+surface_N_omega = None
 surface_Nt = None
 
 # Number of particles added per timestep (RN)
