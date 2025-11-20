@@ -98,7 +98,7 @@ pc = plt.pcolormesh(x_edges,
                     cmap="inferno",
                     shading="flat")
 plt.colorbar(pc, label="Temperature [keV]")
-plt.clim(vmin=0.05, vmax=0.3)
+plt.clim(vmin=0.00, vmax=0.3)
 plt.xlabel("x")
 plt.ylabel("y")
 plt.xlim(x_edges[0], x_edges[-1])
@@ -115,7 +115,7 @@ pc = plt.pcolormesh(x_edges,
                     cmap="inferno",
                     shading="flat")
 plt.colorbar(pc, label="Temperature [keV]")
-plt.clim(vmin=0.05, vmax=0.3)
+plt.clim(vmin=0.00, vmax=0.3)
 plt.xlabel("x")
 plt.ylabel("y")
 plt.xlim(x_edges[0], x_edges[-1])

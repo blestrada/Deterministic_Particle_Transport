@@ -1511,6 +1511,7 @@ def generate_scattered_particles(
     n_scattered_particles : int
         Number of scattered particles generated.
     """
+    # print(f'Sum of nrgscattered = {np.sum(nrgscattered)}')
 
     num_x_cells = len(mesh_x_edges) - 1
     num_y_cells = len(mesh_y_edges) - 1
@@ -1554,7 +1555,7 @@ def generate_scattered_particles(
 
             emission_times = current_time + (np.arange(ptcl_Nt[ix, iy]) + 0.5) * dt / ptcl_Nt[ix, iy]
 
-            n_source_ptcls = ptcl_Nx[ix, iy] * ptcl_Ny[ix, iy] * ptcl_Nmu[ix, iy] * ptcl_Nt[ix, iy]
+            n_source_ptcls = ptcl_Nx[ix, iy] * ptcl_Ny[ix, iy] * ptcl_Nmu[ix, iy] * ptcl_N_omega[ix,iy] * ptcl_Nt[ix, iy]
             nrg = nrgscattered[ix, iy] / n_source_ptcls
 
             # Solve for chi, gamma, tau
@@ -1610,6 +1611,8 @@ def generate_scattered_particles(
         nrg = nrgscattered[ix, iy] * P / P_tally[ix, iy]
         # Set particle startnrg
         scattered_particles[idx, 8] = nrg  # start energy
+    
+    # print(f'Sum of generated particles energies = {np.sum(scattered_particles[:, 8])}')
     return scattered_particles, n_scattered_particles
 
 

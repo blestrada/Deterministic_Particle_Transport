@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import os
 import time as tm
 import pandas as pd
+import numba
 
 import imc_update
 import imc_source
@@ -794,7 +795,7 @@ def crooked_pipe(output_file):
 
     print(f'mat.b = {mat.b}')
     # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
-    part.max_array_size = 500_000_000
+    part.max_array_size = 600_000_000
     part.particle_prop = np.zeros((part.max_array_size, 10), dtype=np.float64)
     part.n_particles = 0
 
@@ -812,6 +813,10 @@ def crooked_pipe(output_file):
     bcon.T0 = 0.3 # keV
     part.n_input = 500_000
     parallel = True
+
+    n_all = numba.get_num_threads()
+    numba.set_num_threads(max(1, n_all // 2))
+    print("Numba will use", numba.get_num_threads(), "threads.")
 
     # Loop over timesteps
     records = []
@@ -870,9 +875,9 @@ def crooked_pipe(output_file):
                             mesh.fleck, mesh.x_edges, mesh.y_edges
                         )
                         original_nrg_scattered = np.copy(nrgscattered)
-
+                        # print(f'original sum of nrg_scattered = {np.sum(original_nrg_scattered)}')
                         # Step 2: Implicit scattering loop
-                        epsilon = 1e-4
+                        epsilon = 1e-2
                         iterations = 0
                         converged = False
 
@@ -892,7 +897,7 @@ def crooked_pipe(output_file):
                                 mesh.sigma_a, mesh.sigma_s, mesh.sigma_t,
                                 mesh.fleck, mesh.x_edges, mesh.y_edges
                             )
-
+                            # print(f'Sum of nrgscatted iteration {iterations} = {np.sum(nrgscattered)}')
                             # Add scattered particle deposition to the mesh
                             mesh.nrgdep += nrgdep_scat
 
@@ -900,7 +905,8 @@ def crooked_pipe(output_file):
                             n_existing_particles = part.n_particles
                             n_total_particles = n_existing_particles + n_scattered_particles
                             if n_total_particles > part.max_array_size:
-                                raise ValueError("Not enough space in global array for scattered particles")
+                                print(f'iteration {iterations}')
+                                raise ValueError("Not enough space in global array for scattered particles in iteration ")
 
                             part.particle_prop[n_existing_particles:n_total_particles, :] = scattered_particles[:n_scattered_particles, :]
                             part.n_particles = n_total_particles
