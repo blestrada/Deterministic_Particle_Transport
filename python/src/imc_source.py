@@ -3,6 +3,7 @@
 import numpy as np
 from numba import njit, objmode
 import matplotlib.pyplot as plt
+from numpy.typing import NDArray
 
 import imc_global_part_data as part
 import imc_global_mesh_data as mesh
@@ -11,6 +12,80 @@ import imc_global_bcon_data as bcon
 import imc_global_time_data as time
 import imc_global_volsource_data as vol
 import imc_utilities as imc_util
+
+# Random Sampling Functions
+@njit
+def sample_radius(r_min: float,
+                  r_max: float
+) -> float:
+    """Given r_min and r_max, sample an r position in the cell.
+    Since emission is uniform in volume, the pdf for sampling r is f(r)=2r/r_max^2."""
+    r = np.sqrt(r_min**2 + np.random.uniform()*(r_max**2 - r_min**2))
+    return r
+
+@njit
+def sample_z(z_min: float,
+             z_max: float
+) -> float:
+    """Given z_min and z_max, sample a z position in the cell"""
+    z = z_min + np.random.uniform()*(z_max - z_min)
+    return z
+
+@njit
+def sample_mu_isotropic() -> float:
+    return 2 * np.random.uniform() - 1.0
+
+@njit
+def sample_phi_isotropic() -> float:
+    return 2 * np.pi * np.random.uniform()
+
+def sample_mu_lambertian() -> float:
+    """
+    Produce mu between 0 and 1 with a lambertian distribution
+    """
+    return np.sqrt(np.random.uniform())
+# Deterministic Sampling Functions
+
+@njit
+def deterministic_sample_radius(r_min: float,
+                                r_max: float,
+                                n_samples: int
+) -> NDArray:
+    """
+    Deterministically sample R for a cylindrical shell.
+    """
+    # centered uniform points
+    p_values = (np.arange(n_samples) + 0.5) / n_samples
+    # apply the PDF
+    r_values = np.sqrt(r_min**2 + p_values * (r_max**2 - r_min**2))
+    return r_values
+    
+@njit
+def deterministic_sample_z(z_min: float,
+                           z_max:float,
+                           n_samples: int
+) -> NDArray:
+    """
+    Determinstically sample Z for a cylindrical shell.
+    """
+    # Assume a uniform distribution
+    z_values = z_min + (np.arange(n_samples)+0.5) * (z_max - z_min) / n_samples
+    return z_values
+
+@njit
+def deterministic_sample_mu_isotropic(n_samples) -> NDArray:
+    return -1.0 + ((np.arange(n_samples)) + 0.5) * 2 / n_samples
+
+@njit
+def deterministic_sample_mu_lambertian(n_samples) -> NDArray:
+    """
+    Produce n_samples of mu between 0 and 1 with a lambertian distribution
+    """
+    return np.sqrt(((np.arange(n_samples)) + 0.5) / n_samples)
+
+@njit          
+def deterministic_sample_phi_isotropic(n_samples) -> NDArray:
+    return (0.0 + (np.arange(n_samples) + 0.5)) * 2 * np.pi / n_samples
 
 
 def calculate_even_angles(ef, ef_ref=1/3, ef_max=1.0, n_min=2, n_max=16):
@@ -690,31 +765,41 @@ def run(fleck, temp, sigma_a, particle_prop, n_particles, current_time, dt):
     return n_particles, particle_prop
 
 
-def imc_get_energy_sources_2D(body_source, surface_source, fleck, temp, dt, sigma_a, mesh_dx, mesh_dy):
-    """Get energy source terms"""
+def imc_get_energy_sources_2D(body_source, surface_source, 
+                              fleck, temp, dt, sigma_a, mesh_z_edges, mesh_r_edges):
+    """
+    Calculates RZ energy source terms using cylindrical volumes.
+    """
+    num_z = len(mesh_z_edges) - 1
+    num_r = len(mesh_r_edges) - 1
+    
+    # Initialize body energy array
+    e_body = np.zeros((num_z, num_r))
 
-    # Body source term
     if body_source:
-        e_body = np.zeros((len(mesh_dx), len(mesh_dy)))
-        for i, dx in enumerate(mesh_dx):
-            for j, dy in enumerate(mesh_dy):
-                e_body[i, j] = (
-                    fleck[i, j]
-                    * sigma_a[i, j]
-                    * phys.a
-                    * phys.c
-                    * temp[i, j] ** 4
-                    * dx
-                    * dy
-                    * dt
-                )
-    else:
-        e_body = np.zeros((len(mesh_dx), len(mesh_dy)))
+        # Pre-calculate RZ volumes for the entire mesh
+        dz = np.diff(mesh_z_edges)
+        dr2 = np.diff(mesh_r_edges**2)
+        # volumes[i, j] = pi * (r_out^2 - r_in^2) * dz
+        volumes = np.pi * np.outer(dz, dr2)
+
+        # Volumetric emission rate: j = f * sigma_a * a * c * T^4
+        # Total energy: E = j * Volume * dt
+        e_body = (
+            fleck * 
+            sigma_a * 
+            phys.a * 
+            phys.c * 
+            temp**4 * 
+            volumes * 
+            dt
+        )
 
     e_surf = 0.0
     if surface_source:
+        print(f'Surface at temp = {bcon.T0}')
         surface_length = 0.5
-        e_surf = phys.sb * bcon.T0 ** 4 * dt * surface_length
+        e_surf = phys.sb * bcon.T0 ** 4 * dt * (np.pi * surface_length**2)
 
     # Total energy emitted
     e_total = e_surf + np.sum(e_body)
@@ -794,7 +879,7 @@ def imc_get_source_particle_numbers2D(p_surf, p_body):
 
 def imc_source_particles2D(
     e_surf, n_surf, e_body, n_body, particle_prop, n_particles,
-    current_time, dt, mesh_x_edges, mesh_y_edges
+    current_time, dt, mesh_z_edges, mesh_r_edges
 ):
     """For known energy distribution, create source particles and add to pre-allocated array.
     
@@ -810,26 +895,26 @@ def imc_source_particles2D(
         for _ in range(n_surf):
             if n_particles >= max_particles:
                 raise RuntimeError("Maximum number of particles reached in surface source.")
-            xpos = 1e-12
-            ypos = np.random.uniform(0, 0.5)  
+            z = 1e-12
+            r = sample_radius(0.0, 0.5)
             # Cell indices
-            x_idx = np.searchsorted(mesh_x_edges, xpos) - 1
-            y_idx = np.searchsorted(mesh_y_edges, ypos) - 1
+            z_idx = 0
+            r_idx = np.searchsorted(mesh_r_edges, r) - 1
             # Time, frequency, angle
             ttt = current_time + np.random.uniform() * dt
             frq = 0.0
-            theta = np.random.uniform(-0.5*np.pi, 0.5*np.pi)  # rightward hemisphere
-            mu = 2 * np.random.uniform() - 1.0
+            mu = np.sqrt(np.random.uniform())
+            phi = sample_phi_isotropic()
             # Store
             particle_prop[n_particles] = [
-                ttt, x_idx, y_idx, xpos, ypos, mu, theta, frq, nrg, startnrg
+                ttt, z_idx, r_idx, z, r, mu, phi, frq, nrg, startnrg
             ]
             n_particles += 1
 
     # --- Body source particles ---
     if np.sum(n_body) > 0 and np.sum(e_body) > 0.0:
-        for i in range(n_body.shape[0]):
-            for j in range(n_body.shape[1]):
+        for i in range(n_body.shape[0]): # Z index
+            for j in range(n_body.shape[1]): # R index
                 if n_body[i, j] > 0:
                     nrg = e_body[i, j] / float(n_body[i, j])
                     startnrg = nrg
@@ -837,31 +922,31 @@ def imc_source_particles2D(
                         if n_particles >= max_particles:
                             raise RuntimeError("Maximum number of particles reached in body source.")
                         # Sample uniformly inside the cell
-                        xpos = np.random.uniform(mesh_x_edges[i], mesh_x_edges[i+1])
-                        ypos = np.random.uniform(mesh_y_edges[j], mesh_y_edges[j+1])
+                        z = sample_z(mesh_z_edges[i], mesh_z_edges[i+1])
+                        r = sample_radius(mesh_r_edges[j], mesh_r_edges[j+1])
                         # Indices
-                        x_idx, y_idx = i, j
+                        z_idx, r_idx = i, j
                         # Time, frequency, angle
                         ttt = current_time + np.random.uniform() * dt
                         frq = 0.0
-                        theta = np.random.uniform(0.0, 2.0*np.pi)  # isotropic
-                        mu = 2 * np.random.uniform() - 1.0
+                        mu = sample_mu_isotropic()
+                        phi = sample_phi_isotropic()
                         # Store
                         particle_prop[n_particles] = [
-                            ttt, x_idx, y_idx, xpos, ypos, mu, theta, frq, nrg, startnrg
+                            ttt, z_idx, r_idx, z, r, mu, phi, frq, nrg, startnrg
                         ]
                         n_particles += 1
 
     return n_particles, particle_prop
 
 
-def run2D(fleck, temp, sigma_a, particle_prop, n_particles, current_time, dt, mesh_dx, mesh_dy, mesh_x_edges, mesh_y_edges):
+def run2D(fleck, temp, sigma_a, particle_prop, n_particles, current_time, dt, mesh_z_edges, mesh_r_edges):
     print("\n" + "-" * 79)
     print("Source step ({:4d})".format(time.step))
     print("-" * 79)
 
     # Get the energy source terms
-    e_surf, e_body, e_total = imc_get_energy_sources_2D(True, True, fleck, temp, dt, sigma_a, mesh_dx, mesh_dy)
+    e_surf, e_body, e_total = imc_get_energy_sources_2D(True, True, fleck, temp, dt, sigma_a, mesh_z_edges, mesh_r_edges)
 
     # Get emission probabilities
     p_surf, p_body = imc_get_emission_probabilities2D(e_surf, e_body, e_total)
@@ -870,7 +955,7 @@ def run2D(fleck, temp, sigma_a, particle_prop, n_particles, current_time, dt, me
     n_surf, n_body = imc_get_source_particle_numbers2D(p_surf, p_body)
 
     # Create particles
-    n_particles, particle_prop = imc_source_particles2D(e_surf, n_surf, e_body, n_body, particle_prop, n_particles, current_time, dt, mesh_x_edges, mesh_y_edges)
+    n_particles, particle_prop = imc_source_particles2D(e_surf, n_surf, e_body, n_body, particle_prop, n_particles, current_time, dt, mesh_z_edges, mesh_r_edges)
 
     # Final particle count in system
     print("Number of particles in the system after sourcing = {:12d}".format(n_particles))
@@ -878,51 +963,51 @@ def run2D(fleck, temp, sigma_a, particle_prop, n_particles, current_time, dt, me
     return n_particles, particle_prop
 
 
-def crooked_pipe_surface_particles(n_particles, particle_prop, surface_Ny, surface_Nmu, surface_N_omega, surface_Nt, current_time, dt, mesh_y_edges):
+def crooked_pipe_surface_particles(n_particles, particle_prop, 
+                                   surface_Nr, surface_Nmu, 
+                                   surface_N_phi, surface_Nt, 
+                                   current_time, dt, mesh_r_edges):
     """Creates surface source particles for the boundary condition"""
     T_surf = bcon.T0  # keV
     surface_length = 0.5 # cm
-    e_surf = phys.sb * (T_surf ** 4) * dt * surface_length # surface energy over dt
+    e_surf = phys.sb * T_surf ** 4 * dt * (np.pi * surface_length**2)
     print(f'Total energy emitted by the surface = {e_surf}')
-    # The surface source ranges from y=0 to y=0.5 at x=0
-    y_values = 0.0 + ((np.arange(surface_Ny) + 0.5) / surface_Ny) * 0.5
-    # print(f'y_values = {y_values}')
 
-    # Generate mu and omega parameters
-    mu_values = -1.0 + ((np.arange(surface_Nmu)) + 0.5) * 2 / surface_Nmu
-    # print(f'mu_values = {mu_values}')
+    # Generate radii
+    r_values = deterministic_sample_radius(0.0, 0.5, surface_Nr)
+    print(f'r_values = {r_values}')
 
-    range_width = np.pi
-    min_omega = -np.pi / 2
-    # print(f'surface_n_omega = {surface_N_omega}')
-    omega_values = min_omega + ((np.arange(surface_N_omega)) + 0.5) * range_width / surface_N_omega
-    # print(f'omega_values = {omega_values}')
+    # Generate mu
+    mu_values = deterministic_sample_mu_lambertian(surface_Nmu)
+    print(f'mu_values = {mu_values}')
+
+    # Generate Phi
+    phi_values = deterministic_sample_phi_isotropic(surface_N_phi)
+    print(f'phi_values = {phi_values}')
 
     # Emission times evenly spaced over dt
-    emission_times = current_time + (np.arange(surface_Nt) + 0.5) * dt / surface_Nt
+    t_values = current_time + (np.arange(surface_Nt) + 0.5) * dt / surface_Nt
 
     # Total number of source particles
-    n_source_ptcls = len(y_values) * len(emission_times) * len(mu_values) * len(omega_values)
+    n_source_ptcls = len(r_values) * len(mu_values) * len(phi_values) * len(t_values)
     print(f'Number of surface source particles = {n_source_ptcls}')
 
     # Energy per particle
     nrg = e_surf / n_source_ptcls
 
-    xpos = 0.0
-    x_idx = 0
+    z = 1e-12
+    z_idx = 0
 
-    for ypos in y_values:
-        # Find y_idx: the cell where y falls between mesh_y_edges[k] and mesh_y_edges[k+1]
-        y_idx = np.searchsorted(mesh_y_edges, ypos) - 1
-        if y_idx < 0 or y_idx >= len(mesh_y_edges) - 1:
-            raise ValueError(f"y={ypos} is outside mesh_y_edges range")
+    for r in r_values:
+        # Find r_idx: the cell where r falls between mesh_r_edges[k] and mesh_r_edges[k+1]
+        r_idx = np.searchsorted(mesh_r_edges, r) - 1
         for mu in mu_values:
-            for omega in omega_values:
-                for ttt in emission_times:
+            for phi in phi_values:
+                for ttt in t_values:
                     if n_particles < part.max_array_size:
                         startnrg = nrg
-                        # Assign: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
-                        particle_prop[n_particles] = [ttt, x_idx, y_idx, xpos, ypos, mu, omega, 0, nrg, startnrg]
+                        # Assign: [emission_time, z_idx, r_idx, z, r, mu, phi, frq, nrg, startnrg]
+                        particle_prop[n_particles] = [ttt, z_idx, r_idx, z, r, mu, phi, 0, nrg, startnrg]
                         n_particles += 1
                     else:
                         print("Warning: Maximum number of particles reached!")
@@ -931,70 +1016,86 @@ def crooked_pipe_surface_particles(n_particles, particle_prop, surface_Ny, surfa
     return n_particles, particle_prop
 
 
-def crooked_pipe_body_particles(n_particles, particle_prop, current_time, dt, mesh_y_edges, mesh_x_edges, mesh_temp, mesh_dx, mesh_dy, mesh_fleck, mesh_sigma_a):
-    nx_cells = len(mesh_x_edges) - 1
-    ny_cells = len(mesh_y_edges) - 1
+def crooked_pipe_body_particles(n_particles, particle_prop, 
+                                current_time, dt, 
+                                mesh_r_edges, mesh_z_edges, 
+                                mesh_temp, mesh_fleck, 
+                                mesh_sigma_a):
+    nz_cells = len(mesh_z_edges) - 1
+    nr_cells = len(mesh_r_edges) - 1
 
+    # Pre-calculate RZ volumes for the entire mesh
+    dz = np.diff(mesh_z_edges)
+    dr2 = np.diff(mesh_r_edges**2)
+    # volumes[i, j] = pi * (r_out^2 - r_in^2) * dz
+    volumes = np.pi * np.outer(dz, dr2)
+    
     start_count = n_particles
-    for ix in range(nx_cells):
-        for iy in range(ny_cells):
+    for iz in range(nz_cells):
+        for ir in range(nr_cells):
+            # Cell volume
+            zone_volume = volumes[iz, ir]
+
+            # Generate z
+            z_min = mesh_z_edges[iz]
+            z_max = mesh_z_edges[iz+1]
+            z_samples = part.Nx[iz, ir]
+            z_values = deterministic_sample_z(z_min, z_max, z_samples)
+
+            # Generate r
+            r_min = mesh_r_edges[ir]
+            r_max = mesh_r_edges[ir+1]
+            r_samples = part.Ny[iz, ir]
+            r_values = deterministic_sample_radius(r_min, r_max, r_samples)
+
+            # Generate mu
+            mu_samples = part.Nmu[iz, ir]
+            mu_values = deterministic_sample_mu_isotropic(mu_samples)
+
+            # Generate phi
+            phi_samples = part.N_omega[iz, ir]
+            phi_values = deterministic_sample_phi_isotropic(phi_samples)
             
-            # Cell sizes
-            dy_cell = mesh_dy[iy]
-            dx_cell = mesh_dx[ix]
+            # Generate t
+            t_values = current_time + (np.arange(part.Nt[iz, ir]) + 0.5) * dt / part.Nt[iz, ir]
 
-            x_positions = mesh_x_edges[ix] + (np.arange(part.Nx[ix, iy]) + 0.5) * dx_cell / part.Nx[ix, iy]
-            y_positions = mesh_y_edges[iy] + (np.arange(part.Ny[ix, iy]) + 0.5) * dy_cell / part.Ny[ix, iy]
+            # The total number of source particle in the cell
+            n_source_ptcls = len(z_values) * len(r_values) * len(mu_values) * len(phi_values) * len(t_values)
 
-            # Generate angles
-            nmu_cell = int(part.Nmu[ix, iy])
-            n_omega_cell = int(part.N_omega[ix, iy])
-
-            mu_values = -1.0 + ((np.arange(nmu_cell)) + 0.5) * 2 / nmu_cell
-            # print(f'mu_values = {mu_values}')
-
-            omega_values = (0.0 + (np.arange(n_omega_cell) + 0.5)) * 2 * np.pi / n_omega_cell
-            # print(f'omega_values = {omega_values}')
-
-            # Emission time spacing
-            emission_times = current_time + (np.arange(part.Nt[ix, iy]) + 0.5) * dt / part.Nt[ix, iy]
-
-            # The number of source particles in the cell
-            n_source_ptcls = part.Nx[ix, iy] * part.Ny[ix, iy] * nmu_cell * n_omega_cell * part.Nt[ix, iy]
-
-            # Energy per particle
-            nrg = (phys.c * mesh_fleck[ix, iy] * mesh_sigma_a[ix, iy] *
-                   phys.a * (mesh_temp[ix, iy] ** 4) *
-                   dt * dx_cell * dy_cell / n_source_ptcls)
-            # print(f'starting source particle nrg = {nrg}')
+            # Total energy emitted by the cell
+            e_cell = (
+            mesh_fleck[iz,ir] * 
+            mesh_sigma_a[iz,ir] * 
+            phys.a * 
+            phys.c * 
+            mesh_temp[iz,ir] **4 * 
+            zone_volume * 
+            dt)
+            
+            nrg = e_cell / n_source_ptcls
             startnrg = nrg
 
             # Loop to create particles
-            for xpos in x_positions:
-                for ypos in y_positions:
+            for z in z_values:
+                for r in r_values:
                     for mu in mu_values:
-                        for omega in omega_values:
-                            for ttt in emission_times:
+                        for phi in phi_values:
+                            for ttt in t_values:
                                 if n_particles < part.max_array_size:
-                                    # Assign: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
-                                    particle_prop[n_particles] = [ttt, ix, iy, xpos, ypos, mu, omega, 0, nrg, startnrg]
+                                    # Assign: [emission_time, z_idx, r_idx, z, r, mu, phi, frq, nrg, startnrg]
+                                    particle_prop[n_particles] = [ttt, iz, ir, z, r, mu, phi, 0, nrg, startnrg]
                                     n_particles += 1
                                 else:
                                     print("Warning: Maximum number of particles reached!")
     print(f"Added {n_particles - start_count} body-source particles.")
     
-    e_body = np.zeros((len(mesh_dx), len(mesh_dy)))
-    for i, dx in enumerate(mesh_dx):
-        for j, dy in enumerate(mesh_dy):
-            e_body[i, j] = (
-                mesh_fleck[i, j]
-                * mesh_sigma_a[i, j]
-                * phys.a
-                * phys.c
-                * mesh_temp[i, j] ** 4
-                * dx
-                * dy
-                * dt
-            )
+    e_body = (
+        mesh_fleck
+        * mesh_sigma_a
+        * phys.a
+        * phys.c
+        * mesh_temp ** 4
+        * volumes
+        * dt)
     print(f'Total energy emitted by body-source = {np.sum(e_body)}')
     return n_particles, particle_prop

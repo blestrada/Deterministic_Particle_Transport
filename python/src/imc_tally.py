@@ -151,36 +151,57 @@ def general_tally(nrgdep, n_particles, particle_prop, temp):
     return temp, radtemp
 
 
-def crooked_pipe_tally(nrgdep, mesh_dx, mesh_dy, n_particles, particle_prop, temp, mesh_sigma_a, mesh_fleck, dt):
-    num_x_cells = len(mesh_dx)
-    num_y_cells = len(mesh_dy)
+def crooked_pipe_tally(nrgdep, 
+                       mesh_z_edges, mesh_r_edges, 
+                       n_particles, particle_prop, 
+                       temp, mesh_sigma_a, mesh_fleck, dt):
+    # z corresponds to your x-axis, r corresponds to your y-axis
+    num_z_cells = len(mesh_z_edges) - 1
+    num_r_cells = len(mesh_r_edges) - 1
 
-    # 2D area array
-    area = np.outer(mesh_dx, mesh_dy)  # shape: (num_x_cells, num_y_cells)
+    # 1. Calculate RZ Volumes: V = pi * (r_outer^2 - r_inner^2) * delta_z
+    dz = np.diff(mesh_z_edges) # shape (num_z_cells,)
+    r_inner = mesh_r_edges[:-1]
+    r_outer = mesh_r_edges[1:]
+    dr2 = r_outer**2 - r_inner**2 # shape (num_r_cells,)
+    
+    # Create 2D volume array using outer product
+    # volumes[z_idx, r_idx]
+    volumes = np.pi * np.outer(dz, dr2)
 
-    # Start of step radiation energy density
-    radenergydens = phys.a * temp ** 4  # keV/cm^3
+    # 2. Start of step radiation energy density
+    radenergydens_old = phys.a * temp ** 4 
+    
     if np.any(nrgdep < 0.0):
         raise RuntimeError(f"Negative energy deposited detected! min(nrgdep) = {np.min(nrgdep)}")
     
-    # Energy increase per cell
-    nrg_inc = (nrgdep / area) - (mesh_sigma_a * mesh_fleck * radenergydens * phys.c * dt)
+    # 3. Energy increase per cell (using Volumetric Tally)
+    # Energy per unit volume = (Total Energy) / Volume
+    # nrg_inc is d(InternalEnergy)/dt integrated over dt
+    nrg_inc = (nrgdep / volumes) - (mesh_sigma_a * mesh_fleck * radenergydens_old * phys.c * dt)
 
-    # Material temperature update
-    temp = temp + nrg_inc / mat.b
-    if np.any(temp < 0.0):
-        raise RuntimeError(f"Negative temperature detected! min(temp) = {np.min(temp)}")
+    # 4. Material temperature update
+    # Note: Ensure mat.b (Cv) is in units of keV / (cm^3 * keV_temp)
+    temp = temp + (nrg_inc / mat.b)
     
-    # Calculate the radiation temperature
-    radnrgdens = np.zeros((num_x_cells, num_y_cells))
+    # 5. Calculate the Census Radiation Temperature
+    # We sum the energies of particles currently in flight (census)
+    radnrgdens_census = np.zeros((num_z_cells, num_r_cells))
+    
     for i in range(n_particles):
-        particle = particle_prop[i]
-        nrg = particle[7]
-        if nrg >= 0.0:
-            x_cell_index = int(particle[1])
-            y_cell_index = int(particle[2])
-            radnrgdens[x_cell_index, y_cell_index] += nrg / (mesh_dx[x_cell_index] * mesh_dy[y_cell_index])  # Update the energy density in the corresponding cell
+        p = particle_prop[i]
+        nrg = p[8]
+        if nrg > 0.0:
+            z_idx = int(p[1])
+            r_idx = int(p[2])
+            # Check bounds to prevent indexing errors at census
+            if 0 <= z_idx < num_z_cells and 0 <= r_idx < num_r_cells:
+                radnrgdens_census[z_idx, r_idx] += nrg
 
-    radtemp = (radnrgdens / phys.a) ** (1/4)
+    # Convert total census energy to density
+    radnrgdens_census /= volumes
+
+    # Avoid zero/negative before power of 1/4
+    radtemp = (np.maximum(radnrgdens_census, 0.0) / phys.a) ** 0.25
     
     return temp, radtemp

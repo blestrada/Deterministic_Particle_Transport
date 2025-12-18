@@ -12,6 +12,7 @@ import imc_global_mesh_data as mesh
 import imc_global_part_data as ptcl
 import imc_global_phys_data as phys
 import imc_global_time_data as time
+import imc_source
 
 @njit
 def chi_equation(chi, x_0, x_1, dx, X_s):
@@ -1175,250 +1176,103 @@ def run2D(n_particles, particle_prop, current_time, dt, sigma_a, sigma_s, sigma_
     return nrgdep, n_particles, particle_prop
 
 
-
-
-# Parallel Implementations
-
-# @njit(parallel=True)
-# def run_crooked_pipe_firstloop(n_particles, particle_prop, current_time, dt,
-#                                mesh_sigma_a, mesh_sigma_s, mesh_sigma_t,
-#                                mesh_fleck, mesh_x_edges, mesh_y_edges,
-#                                ):
-#     num_x_cells = len(mesh_x_edges) - 1
-#     num_y_cells = len(mesh_y_edges) - 1
-
-#     # Global tallies
-#     nrgdep = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-#     nrgscattered = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-#     x_Es = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-#     y_Es = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-#     tEs = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-
-#     # Private tallies for each thread
-#     n_threads = numba.get_num_threads()
-#     priv_dep = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
-#     priv_scat = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
-#     priv_xEs = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
-#     priv_yEs = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
-#     priv_tEs = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
-
-#     endsteptime = current_time + dt
-#     phys_c = phys.c
-#     phys_invc = phys.invc
-
-#     # Parallel loop over particles
-#     for iptcl in prange(n_particles):
-#         tid = numba.np.ufunc.parallel._get_thread_id()  # thread-local index
-
-#         # unpack particle
-#         ttt = particle_prop[iptcl, 0]
-#         x_cell_idx = int(particle_prop[iptcl, 1])
-#         y_cell_idx = int(particle_prop[iptcl, 2])
-#         xpos = particle_prop[iptcl, 3]
-#         ypos = particle_prop[iptcl, 4]
-#         mu   = particle_prop[iptcl, 5]
-#         omega = particle_prop[iptcl, 6]
-#         frq = particle_prop[iptcl, 7]
-#         nrg = particle_prop[iptcl, 8]
-#         startnrg = particle_prop[iptcl, 9]
-
-#         # Use a flag for the particle history loop
-#         history_continues = True
-#         while history_continues:
-            
-#             # Calculate distance to boundary
-#             # NOTE: Assuming 'mesh' is accessible or defined within the scope, 
-#             # if not, use mesh_x_edges[x_cell_idx] etc. as arguments
-#             dist_b = distance_to_boundary_2D(xpos, ypos, mu, omega, mesh_x_edges[x_cell_idx], mesh_x_edges[x_cell_idx+1], mesh_y_edges[y_cell_idx], mesh_y_edges[y_cell_idx+1] )
-#             # Calculate distance to census
-#             dist_cen = phys_c * (endsteptime - ttt)
-            
-            
-#             distances = np.array([dist_b, dist_cen])
-#             dist = np.min(distances)
-#             event = np.argmin(distances) # 0=dist_b, 1=census
-
-        
-
-#             # Energy change
-#             newnrg = nrg * np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist)
-#             newnrg = max(newnrg, 0.0)
-#             nrg_change = nrg - newnrg
-
-#             # Absorption/Scattering Fractions
-#             frac_absorbed = (mesh_sigma_a[x_cell_idx, y_cell_idx] *
-#                              mesh_fleck[x_cell_idx, y_cell_idx] /
-#                              mesh_sigma_t[x_cell_idx, y_cell_idx])
-
-#             frac_scattered = (((1.0 - mesh_fleck[x_cell_idx, y_cell_idx]) *
-#                                mesh_sigma_a[x_cell_idx, y_cell_idx] +
-#                                mesh_sigma_s[x_cell_idx, y_cell_idx]) /
-#                               mesh_sigma_t[x_cell_idx, y_cell_idx])
-
-#             # Update PRIVATE tallies (deposition)
-#             priv_dep[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_absorbed
-#             priv_scat[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_scattered
-
-#             # Average scatter length and energy tally
-#             average_scatter_length = (1 / mesh_sigma_t[x_cell_idx, y_cell_idx] *
-#                                       (1 - (1 + mesh_sigma_t[x_cell_idx, y_cell_idx] * dist) *
-#                                        np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist)) /
-#                                       (1 - np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist)))
-            
-#             # Corrected 3D projected direction components
-#             rho = np.sqrt(1.0 - mu**2) 
-#             dx = rho * np.cos(omega)
-#             dy = rho * np.sin(omega)
-            
-#             avg_x = xpos + dx * average_scatter_length
-#             avg_y = ypos + dy * average_scatter_length
-#             avg_t = ttt + average_scatter_length * phys_invc # Use phys_invc (1/c)
-
-#             priv_xEs[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_scattered * avg_x
-#             priv_yEs[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_absorbed * avg_y
-#             priv_tEs[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_scattered * avg_t
-
-            
-#             # Advance position
-#             xpos += dx * dist
-#             ypos += dy * dist
-
-#             # Advance time
-#             ttt += dist * phys_invc
-
-#             # Update energy
-#             nrg = newnrg
-
-#             # --- Event Handling (Single Exit Point Logic) ---
-
-#             if event == 0:
-#                 # Boundary
-#                 xpos, ypos, mu, omega, x_cell_idx, y_cell_idx, alive = treat_boundary_2D(
-#                     xpos, ypos, mu, omega,
-#                     x_cell_idx, y_cell_idx,
-#                     mesh_x_edges, mesh_y_edges,
-#                     left_bc='vacuum', right_bc='vacuum', bottom_bc='reflecting', top_bc='vacuum'
-#                 )
-                
-#                 if not alive:
-#                     # Global death: Exit loop
-#                     particle_prop[iptcl, 8] = -1.0
-#                     history_continues = False 
-                
-#                 # If particle is alive (internal crossing or reflection), 
-#                 # we do NOT need 'continue'. The loop naturally restarts,
-#                 # immediately calculating new distances with updated indices/position.
-
-#             elif event == 1:
-#                 # Census: Exit loop and save properties
-                
-#                 particle_prop[iptcl, 0] = ttt
-#                 particle_prop[iptcl, 1] = x_cell_idx
-#                 particle_prop[iptcl, 2] = y_cell_idx
-#                 particle_prop[iptcl, 3] = xpos
-#                 particle_prop[iptcl, 4] = ypos
-#                 particle_prop[iptcl, 5] = mu
-#                 particle_prop[iptcl, 6] = omega
-#                 particle_prop[iptcl, 7] = frq
-#                 particle_prop[iptcl, 8] = nrg
-#                 particle_prop[iptcl, 9] = startnrg
-                
-#                 history_continues = False
-
-#             # No 'else' needed as there is no collision event (only boundary/census)
-
-#     # --- Reduction step ---
-#     for t in range(n_threads):
-#         nrgdep += priv_dep[t]
-#         nrgscattered += priv_scat[t]
-#         x_Es += priv_xEs[t]
-#         y_Es += priv_yEs[t]
-#         tEs += priv_tEs[t]
-
-#     return nrgdep, nrgscattered, x_Es, y_Es, tEs
-
 @njit
 def track_single_particle(
-    iptcl, particle_prop, mesh_x_edges, mesh_y_edges, 
+    iptcl, particle_prop, mesh_z_edges, mesh_r_edges, 
     mesh_sigma_a, mesh_sigma_s, mesh_sigma_t, mesh_fleck, 
     phys_c, phys_invc, endsteptime,
     tid, priv_dep, priv_scat, priv_xEs, priv_yEs, priv_tEs
 ):
-    # 1. UNPACK PARTICLE STATE
+    # Get Particle Parameters
     ttt = particle_prop[iptcl, 0]
-    x_cell_idx = int(particle_prop[iptcl, 1])
-    y_cell_idx = int(particle_prop[iptcl, 2])
-    xpos = particle_prop[iptcl, 3]
-    ypos = particle_prop[iptcl, 4]
+    z_cell_idx = int(particle_prop[iptcl, 1])
+    r_cell_idx = int(particle_prop[iptcl, 2])
+    z = particle_prop[iptcl, 3]
+    r = particle_prop[iptcl, 4]
     mu   = particle_prop[iptcl, 5]
-    omega = particle_prop[iptcl, 6]
+    phi = particle_prop[iptcl, 6]
     frq = particle_prop[iptcl, 7]
     nrg = particle_prop[iptcl, 8]
     startnrg = particle_prop[iptcl, 9]
 
-    # 2. PARTICLE HISTORY LOOP (Copy the entire while loop here)
+    # Particle History Loop
     history_continues = True
     while history_continues:
         
-        # Calculate distance to boundary
-        dist_b = distance_to_boundary_2D(xpos, ypos, mu, omega, mesh_x_edges[x_cell_idx], mesh_x_edges[x_cell_idx+1], mesh_y_edges[y_cell_idx], mesh_y_edges[y_cell_idx+1] )
-        # Calculate distance to census
+        d_z = distance_to_z_boundary(z, mu, 
+                                     mesh_z_edges[z_cell_idx], 
+                                     mesh_z_edges[z_cell_idx+1])
+        
+        d_rmin, d_rmax = get_individual_r_distances(r, 
+                                                    mu, phi, 
+                                                    mesh_r_edges[r_cell_idx], 
+                                                    mesh_r_edges[r_cell_idx+1])
+        
+        dist_b = min(d_z, d_rmin, d_rmax)
         dist_cen = phys_c * (endsteptime - ttt)
         
-        # Safe check (since you removed ValueError, this should be safe)
         if dist_cen < 0:
             dist_cen = 0.0 # Should not happen if endsteptime > ttt, but provides safety
         
         distances = np.array([dist_b, dist_cen])
+
         dist = np.min(distances)
         event = np.argmin(distances) # 0=dist_b, 1=census
 
-        # Energy change, absorption, scattering fractions (all physics here)
-        newnrg = nrg * np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist)
+        # Energy change, absorption, scattering fractions
+        newnrg = nrg * np.exp(-mesh_sigma_t[z_cell_idx, r_cell_idx] * dist)
         newnrg = max(newnrg, 0.0)
         nrg_change = nrg - newnrg
 
-        frac_absorbed = (mesh_sigma_a[x_cell_idx, y_cell_idx] * mesh_fleck[x_cell_idx, y_cell_idx] / mesh_sigma_t[x_cell_idx, y_cell_idx])
-        frac_scattered = (((1.0 - mesh_fleck[x_cell_idx, y_cell_idx]) * mesh_sigma_a[x_cell_idx, y_cell_idx] + mesh_sigma_s[x_cell_idx, y_cell_idx]) / mesh_sigma_t[x_cell_idx, y_cell_idx])
+        frac_absorbed = (mesh_sigma_a[z_cell_idx, r_cell_idx] * mesh_fleck[z_cell_idx, r_cell_idx] / mesh_sigma_t[z_cell_idx, r_cell_idx])
+        frac_scattered = (((1.0 - mesh_fleck[z_cell_idx, r_cell_idx]) * mesh_sigma_a[z_cell_idx, r_cell_idx] + mesh_sigma_s[z_cell_idx, r_cell_idx]) / mesh_sigma_t[z_cell_idx, r_cell_idx])
 
-        # Update PRIVATE tallies (deposition)
-        priv_dep[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_absorbed
-        priv_scat[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_scattered
+        # Update private tallies
+        priv_dep[tid, z_cell_idx, r_cell_idx] += nrg_change * frac_absorbed
+        priv_scat[tid, z_cell_idx, r_cell_idx] += nrg_change * frac_scattered
 
-        # Average scatter length and energy tally
-        # ... (average_scatter_length calculation) ...
-        average_scatter_length = (1 / mesh_sigma_t[x_cell_idx, y_cell_idx] *
-                                      (1 - (1 + mesh_sigma_t[x_cell_idx, y_cell_idx] * dist) *
-                                       np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist)) /
-                                      (1 - np.exp(-mesh_sigma_t[x_cell_idx, y_cell_idx] * dist)))
+        # Average scatter length
+        average_scatter_length = (1 / mesh_sigma_t[z_cell_idx, r_cell_idx] *
+                                      (1 - (1 + mesh_sigma_t[z_cell_idx, r_cell_idx] * dist) *
+                                       np.exp(-mesh_sigma_t[z_cell_idx, r_cell_idx] * dist)) /
+                                      (1 - np.exp(-mesh_sigma_t[z_cell_idx, r_cell_idx] * dist)))
         
-        rho = np.sqrt(1.0 - mu**2) 
-        dx = rho * np.cos(omega)
-        dy = rho * np.sin(omega)
-        
-        avg_x = xpos + dx * average_scatter_length
-        avg_y = ypos + dy * average_scatter_length
-        avg_t = ttt + average_scatter_length * phys_invc
+        # Move particle
+        r_next, z_next, phi_next = move_particle_RZ(r, z, phi, mu, dist)
 
-        priv_xEs[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_scattered * avg_x
-        priv_yEs[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_absorbed * avg_y
-        priv_tEs[tid, x_cell_idx, y_cell_idx] += nrg_change * frac_scattered * avg_t
+        avg_z = z + (z_next - z) * average_scatter_length
+        avg_t = ttt + (dist * phys_invc) * average_scatter_length
+        avg_r = r + (r_next - r) * average_scatter_length
 
-        
-        # Advance position and time
-        xpos += dx * dist
-        ypos += dy * dist
+        priv_xEs[tid, z_cell_idx, r_cell_idx] += nrg_change * frac_scattered * avg_z
+        priv_yEs[tid, z_cell_idx, r_cell_idx] += nrg_change * frac_scattered * avg_r
+        priv_tEs[tid, z_cell_idx, r_cell_idx] += nrg_change * frac_scattered * avg_t
+
+        # Advance particle time
         ttt += dist * phys_invc
+
+        # update particle
+        r,z,phi = r_next, z_next, phi_next
+
+        # Update particle energy
         nrg = newnrg
+
+        # --- NEW ROULETTE / THRESHOLD CHECK ---
+        # Kill particle if nrg < 0.01 * startnrg
+        if nrg < 0.01 * startnrg:
+            priv_dep[tid, z_cell_idx, r_cell_idx] += nrg  # Deposit remaining energy
+            particle_prop[iptcl, 8] = -1.0               # Mark as dead
+            history_continues = False
+            continue # Exit loop for this particle
+        # --------------------------------------
 
         # Event Handling
         if event == 0:
             # Boundary
-            xpos, ypos, mu, omega, x_cell_idx, y_cell_idx, alive = treat_boundary_2D(
-                xpos, ypos, mu, omega,
-                x_cell_idx, y_cell_idx,
-                mesh_x_edges, mesh_y_edges,
-                left_bc='vacuum', right_bc='vacuum', bottom_bc='reflecting', top_bc='vacuum'
+            r_cell_idx, z_cell_idx, mu, phi, alive = treat_boundary_RZ(
+                mu, phi, r_cell_idx, z_cell_idx, 
+                len(mesh_r_edges)-1, len(mesh_z_edges)-1,
+                dist_b, d_z, d_rmin, d_rmax
             )
             
             if not alive:
@@ -1429,12 +1283,12 @@ def track_single_particle(
             # Census: save properties and exit
             
             particle_prop[iptcl, 0] = ttt
-            particle_prop[iptcl, 1] = x_cell_idx
-            particle_prop[iptcl, 2] = y_cell_idx
-            particle_prop[iptcl, 3] = xpos
-            particle_prop[iptcl, 4] = ypos
+            particle_prop[iptcl, 1] = z_cell_idx
+            particle_prop[iptcl, 2] = r_cell_idx
+            particle_prop[iptcl, 3] = z
+            particle_prop[iptcl, 4] = r
             particle_prop[iptcl, 5] = mu
-            particle_prop[iptcl, 6] = omega
+            particle_prop[iptcl, 6] = phi
             particle_prop[iptcl, 7] = frq
             particle_prop[iptcl, 8] = nrg
             particle_prop[iptcl, 9] = startnrg
@@ -1443,28 +1297,29 @@ def track_single_particle(
 
     return
 
+
 @njit(parallel=True)
 def run_crooked_pipe_firstloop(n_particles, particle_prop, current_time, dt,
                                mesh_sigma_a, mesh_sigma_s, mesh_sigma_t,
-                               mesh_fleck, mesh_x_edges, mesh_y_edges,
+                               mesh_fleck, mesh_z_edges, mesh_r_edges,
                                ):
-    num_x_cells = len(mesh_x_edges) - 1
-    num_y_cells = len(mesh_y_edges) - 1
+    num_z_cells = len(mesh_z_edges) - 1
+    num_r_cells = len(mesh_r_edges) - 1
 
     # Global tallies
-    nrgdep = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-    nrgscattered = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-    x_Es = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-    y_Es = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-    tEs = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
+    nrgdep = np.zeros((num_z_cells, num_r_cells), dtype=np.float64)
+    nrgscattered = np.zeros((num_z_cells, num_r_cells), dtype=np.float64)
+    x_Es = np.zeros((num_z_cells, num_r_cells), dtype=np.float64)
+    y_Es = np.zeros((num_z_cells, num_r_cells), dtype=np.float64)
+    tEs = np.zeros((num_z_cells, num_r_cells), dtype=np.float64)
 
     # Private tallies for each thread
     n_threads = numba.get_num_threads()
-    priv_dep = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
-    priv_scat = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
-    priv_xEs = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
-    priv_yEs = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
-    priv_tEs = np.zeros((n_threads, num_x_cells, num_y_cells), dtype=np.float64)
+    priv_dep = np.zeros((n_threads, num_z_cells, num_r_cells), dtype=np.float64)
+    priv_scat = np.zeros((n_threads, num_z_cells, num_r_cells), dtype=np.float64)
+    priv_xEs = np.zeros((n_threads, num_z_cells, num_r_cells), dtype=np.float64)
+    priv_yEs = np.zeros((n_threads, num_z_cells, num_r_cells), dtype=np.float64)
+    priv_tEs = np.zeros((n_threads, num_z_cells, num_r_cells), dtype=np.float64)
 
     # Constants needed inside the tracking function
     endsteptime = current_time + dt
@@ -1478,7 +1333,7 @@ def run_crooked_pipe_firstloop(n_particles, particle_prop, current_time, dt,
         
         # Call the tracking function, isolating the complex control flow
         track_single_particle(
-            iptcl, particle_prop, mesh_x_edges, mesh_y_edges, 
+            iptcl, particle_prop, mesh_z_edges, mesh_r_edges, 
             mesh_sigma_a, mesh_sigma_s, mesh_sigma_t, mesh_fleck, 
             phys_c, phys_invc, endsteptime,
             tid, priv_dep, priv_scat, priv_xEs, priv_yEs, priv_tEs
@@ -1491,14 +1346,22 @@ def run_crooked_pipe_firstloop(n_particles, particle_prop, current_time, dt,
         x_Es += priv_xEs[t]
         y_Es += priv_yEs[t]
         tEs += priv_tEs[t]
+    # with objmode:
+    #     print(f'In inner loop:')
+    #     print(f'nrgdep = {nrgdep}')  
+    #     print(f'nrgscattered = {nrgscattered}')
+    #     print(f'x_Es = {x_Es}')
+    #     print(f'y_Es = {y_Es}')
+    #     print(f'tEs = {tEs}')  
 
     return nrgdep, nrgscattered, x_Es, y_Es, tEs
+
 
 def generate_scattered_particles(
     nrgscattered,
     x_Es, y_Es, t_Es,
-    mesh_x_edges, mesh_y_edges, mesh_dx, mesh_dy,
-    ptcl_max_array_size, ptcl_Nx, ptcl_Ny, ptcl_Nt, ptcl_Nmu, ptcl_N_omega,
+    mesh_z_edges, mesh_r_edges, mesh_dz, mesh_dr,
+    ptcl_max_array_size, ptcl_Nx, ptcl_Ny, ptcl_Nt, ptcl_Nmu, ptcl_N_phi,
     current_time, dt,
 ):
     """
@@ -1507,14 +1370,18 @@ def generate_scattered_particles(
     Returns
     -------
     scattered_particles : ndarray
-        Array of scattered particle properties [time, ix, iy, xpos, ypos, mu, omega, frq, nrg, startnrg].
+        Array of scattered particle properties [time, iz, ir, z, r, mu, phi, frq, nrg, startnrg].
     n_scattered_particles : int
         Number of scattered particles generated.
     """
-    # print(f'Sum of nrgscattered = {np.sum(nrgscattered)}')
+    nz_cells = len(mesh_z_edges) - 1
+    nr_cells = len(mesh_r_edges) - 1
 
-    num_x_cells = len(mesh_x_edges) - 1
-    num_y_cells = len(mesh_y_edges) - 1
+    # Pre-calculate RZ volumes for the entire mesh
+    dz = np.diff(mesh_z_edges)
+    dr2 = np.diff(mesh_r_edges**2)
+    # volumes[i, j] = pi * (r_out^2 - r_in^2) * dz
+    volumes = np.pi * np.outer(dz, dr2)
 
     # Allocate scattered particle array
     scattered_particles = np.zeros((ptcl_max_array_size, 10), dtype=np.float64)
@@ -1526,76 +1393,76 @@ def generate_scattered_particles(
     T_s = np.divide(t_Es, nrgscattered, out=np.zeros_like(t_Es), where=nrgscattered > 0.0)
 
     # Allocate chi, gamma, tau per cell
-    chi   = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-    gamma = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
-    tau   = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
+    chi   = np.zeros((nz_cells, nr_cells), dtype=np.float64)
+    gamma = np.zeros((nz_cells, nr_cells), dtype=np.float64)
+    tau   = np.zeros((nz_cells, nr_cells), dtype=np.float64)
 
-    P_tally = np.zeros((num_x_cells, num_y_cells), dtype=np.float64)
+    P_tally = np.zeros((nz_cells, nr_cells), dtype=np.float64)
 
     # Loop over cells
-    for ix in range(num_x_cells):
-        for iy in range(num_y_cells):
+    for iz in range(nz_cells):
+        for ir in range(nr_cells):
 
-            if nrgscattered[ix, iy] <= 0.0:
+            if nrgscattered[iz, ir] <= 0.0:
                 continue  # no energy to scatter
 
             # Shifted relative averages
-            rel_X = np.round(X_s[ix, iy] - mesh_x_edges[ix], 8)
-            rel_Y = np.round(Y_s[ix, iy] - mesh_y_edges[iy], 8)
-            rel_T = np.round(T_s[ix, iy] - current_time, 8)
+            rel_X = np.round(X_s[iz, ir] - mesh_z_edges[iz], 8)
+            rel_Y = np.round(Y_s[iz, ir] - mesh_r_edges[ir], 8)
+            rel_T = np.round(T_s[iz, ir] - current_time, 8)
 
-            dx_cell = mesh_dx[ix]
-            dy_cell = mesh_dy[iy]
+            dz_cell = mesh_dz[iz]
+            dr_cell = mesh_dr[ir]
 
             # Space, angle, and time grids
-            x_positions = mesh_x_edges[ix] + (np.arange(ptcl_Nx[ix, iy]) + 0.5) * dx_cell / ptcl_Nx[ix, iy]
-            y_positions = mesh_y_edges[iy] + (np.arange(ptcl_Ny[ix, iy]) + 0.5) * dy_cell / ptcl_Ny[ix, iy]
-            mu_values = -1.0 + ((np.arange(ptcl_Nmu[ix, iy])) + 0.5) * 2 / ptcl_Nmu[ix,iy]
-            omega_values = (0.0 + (np.arange(ptcl_N_omega[ix,iy]) + 0.5)) * 2 * np.pi / ptcl_N_omega[ix, iy]
+            z_values = imc_source.deterministic_sample_z(mesh_z_edges[iz], mesh_z_edges[iz+1], ptcl_Nx[iz,ir])
+            r_values = imc_source.deterministic_sample_radius(mesh_r_edges[ir], mesh_r_edges[ir+1], ptcl_Ny[iz,ir])
+            mu_values = imc_source.deterministic_sample_mu_isotropic(ptcl_Nmu[iz,ir])
+            phi_values = imc_source.deterministic_sample_phi_isotropic(ptcl_N_phi[iz,ir])
+            t_values = current_time + (np.arange(ptcl_Nt[iz, ir]) + 0.5) * dt / ptcl_Nt[iz, ir]
 
-            emission_times = current_time + (np.arange(ptcl_Nt[ix, iy]) + 0.5) * dt / ptcl_Nt[ix, iy]
+            n_source_ptcls = len(z_values) * len(r_values) * len(mu_values) * len(phi_values) * len(t_values)
 
-            n_source_ptcls = ptcl_Nx[ix, iy] * ptcl_Ny[ix, iy] * ptcl_Nmu[ix, iy] * ptcl_N_omega[ix,iy] * ptcl_Nt[ix, iy]
-            nrg = nrgscattered[ix, iy] / n_source_ptcls
+            nrg = nrgscattered[iz, ir] / n_source_ptcls
 
             # Solve for chi, gamma, tau
             with objmode:
-                sol = root(chi_equation, 1, args=(0.0, dx_cell, dx_cell, rel_X), method='hybr')
-                chi[ix, iy] = sol.x
-                sol = root(gamma_equation, 1, args=(0.0, dy_cell, dy_cell, rel_Y), method='hybr')
-                gamma[ix, iy] = sol.x
+                sol = root(chi_equation, 1, args=(0.0, dz_cell, dz_cell, rel_X), method='hybr')
+                chi[iz, ir] = sol.x
+                sol = root(gamma_equation, 1, args=(0.0, dr_cell, dr_cell, rel_Y), method='hybr')
+                gamma[iz, ir] = sol.x
                 sol = root(tau_equation, 1, args=(0.0, dt, dt, rel_T), method='hybr')
-                tau[ix, iy] = sol.x
+                tau[iz, ir] = sol.x
 
             # Create scattered particles
-            for xpos in x_positions:
-                for ypos in y_positions:
+            for z in z_values:
+                for r in r_values:
                     for mu in mu_values:
-                        for omega in omega_values:
-                            for ttt in emission_times:
+                        for phi in phi_values:
+                            for ttt in t_values:
                                 if n_scattered_particles >= ptcl_max_array_size:
                                     raise RuntimeError("Maximum number of scattered particles reached")
 
-                                rel_x = xpos - mesh_x_edges[ix]
-                                rel_y = ypos - mesh_y_edges[iy]
+                                rel_z = z - mesh_z_edges[iz]
+                                rel_r = r - mesh_r_edges[ir]
 
                                 P = p_x_y_t_solve(
-                                    chi[ix, iy], gamma[ix, iy], tau[ix, iy],
-                                    dx_cell, dy_cell, dt,
-                                    0, rel_x, 0, rel_y, 0, dt
+                                    chi[iz, ir], gamma[iz, ir], tau[iz, ir],
+                                    dz_cell, dr_cell, dt,
+                                    0, rel_z, 0, rel_r, 0, dt
                                 )
                                 if P < 0:
                                     raise ValueError(f"Negative probability P={P}")
-                                P_tally[ix, iy] += P
+                                P_tally[iz, ir] += P
 
                                 idx = n_scattered_particles
                                 scattered_particles[idx, 0] = ttt   # emission time
-                                scattered_particles[idx, 1] = ix    # x cell index
-                                scattered_particles[idx, 2] = iy    # y cell index
-                                scattered_particles[idx, 3] = xpos  # x position
-                                scattered_particles[idx, 4] = ypos  # y position
+                                scattered_particles[idx, 1] = iz    # z cell index
+                                scattered_particles[idx, 2] = ir    # r cell index
+                                scattered_particles[idx, 3] = z     # z position
+                                scattered_particles[idx, 4] = r     # r position
                                 scattered_particles[idx, 5] = mu    # mu
-                                scattered_particles[idx, 6] = omega # omega
+                                scattered_particles[idx, 6] = phi   # phi
                                 scattered_particles[idx, 7] = 0     # frequency (placeholder)
                                 scattered_particles[idx, 8] = nrg   # particle energy
                                 scattered_particles[idx, 9] = P     # probability weight
@@ -1604,16 +1471,164 @@ def generate_scattered_particles(
     # Put correct energy
     for i in range(n_scattered_particles):
         # Get P and icell
-        ix = int(scattered_particles[i, 1])
-        iy = int(scattered_particles[i, 2])
+        iz = int(scattered_particles[i, 1])
+        ir = int(scattered_particles[i, 2])
         P = scattered_particles[i, 9]
         # Set particle energy
-        nrg = nrgscattered[ix, iy] * P / P_tally[ix, iy]
-        # Set particle startnrg
-        scattered_particles[idx, 8] = nrg  # start energy
+        nrg = nrgscattered[iz, ir] * P / P_tally[iz, ir]
+        scattered_particles[idx, 8] = nrg
+        startnrg = nrg
+        scattered_particles[idx, 9] = startnrg
     
     # print(f'Sum of generated particles energies = {np.sum(scattered_particles[:, 8])}')
     return scattered_particles, n_scattered_particles
+
+@njit
+def track_single_particle_RN(iptcl, particle_prop, mesh_z_edges, mesh_r_edges,
+                             mesh_sigma_a, mesh_sigma_s, mesh_fleck,
+                             phys_c, phys_invc, endsteptime,
+                             tid, priv_dep
+):
+    # Get Particle Parameters
+    ttt = particle_prop[iptcl, 0]
+    z_cell_idx = int(particle_prop[iptcl, 1])
+    r_cell_idx = int(particle_prop[iptcl, 2])
+    z = particle_prop[iptcl, 3]
+    r = particle_prop[iptcl, 4]
+    mu   = particle_prop[iptcl, 5]
+    phi = particle_prop[iptcl, 6]
+    frq = particle_prop[iptcl, 7]
+    nrg = particle_prop[iptcl, 8]
+    startnrg = particle_prop[iptcl, 9]
+
+    history_continues = True
+    while history_continues:
+        
+        d_z = distance_to_z_boundary(z, mu, 
+                                     mesh_z_edges[z_cell_idx], 
+                                     mesh_z_edges[z_cell_idx+1])
+        
+        d_rmin, d_rmax = get_individual_r_distances(r, 
+                                                    mu, phi, 
+                                                    mesh_r_edges[r_cell_idx], 
+                                                    mesh_r_edges[r_cell_idx+1])
+        
+        dist_b = min(d_z, d_rmin, d_rmax)
+        dist_cen = phys_c * (endsteptime - ttt)
+        
+        if dist_cen < 0:
+            dist_cen = 0.0 # Should not happen if endsteptime > ttt, but provides safety
+        
+        dist_col = distance_to_collision(mesh_sigma_a[z_cell_idx,r_cell_idx],
+                                         mesh_sigma_s[z_cell_idx,r_cell_idx], 
+                                         mesh_fleck[z_cell_idx,r_cell_idx])
+
+        distances = np.array([dist_b, dist_cen, dist_col])
+
+        dist = np.min(distances)
+        event = np.argmin(distances) # 0=dist_b, 1=census, 2=collision
+
+        # Energy change
+        newnrg = nrg * np.exp(-mesh_sigma_a[z_cell_idx, r_cell_idx] * mesh_fleck[z_cell_idx, r_cell_idx] * dist)
+        newnrg = max(newnrg, 0.0)
+        nrg_change = nrg - newnrg
+
+        # Update private tallies
+        priv_dep[tid, z_cell_idx, r_cell_idx] += nrg_change
+
+        # Move particle
+        r, z, phi = move_particle_RZ(r, z, phi, mu, dist)
+        
+        # Advance particle time
+        ttt += dist * phys_invc
+
+        # Update particle energy
+        nrg = newnrg
+
+        # --- NEW ROULETTE / THRESHOLD CHECK ---
+        # Kill particle if nrg < 0.01 * startnrg
+        if nrg < 0.01 * startnrg:
+            priv_dep[tid, z_cell_idx, r_cell_idx] += nrg  # Deposit remaining energy
+            particle_prop[iptcl, 8] = -1.0               # Mark as dead
+            history_continues = False
+            continue # Exit loop for this particle
+        # --------------------------------------
+
+        # Event Handling
+        if event == 0:
+            # Boundary
+            r_cell_idx, z_cell_idx, mu, phi, alive = treat_boundary_RZ(
+                mu, phi, r_cell_idx, z_cell_idx, 
+                len(mesh_r_edges)-1, len(mesh_z_edges)-1,
+                dist_b, d_z, d_rmin, d_rmax
+            )
+            
+            if not alive:
+                particle_prop[iptcl, 8] = -1.0
+                history_continues = False 
+            
+        elif event == 1:
+            # Census: save properties and exit
+            
+            particle_prop[iptcl, 0] = ttt
+            particle_prop[iptcl, 1] = z_cell_idx
+            particle_prop[iptcl, 2] = r_cell_idx
+            particle_prop[iptcl, 3] = z
+            particle_prop[iptcl, 4] = r
+            particle_prop[iptcl, 5] = mu
+            particle_prop[iptcl, 6] = phi
+            particle_prop[iptcl, 7] = frq
+            particle_prop[iptcl, 8] = nrg
+            particle_prop[iptcl, 9] = startnrg
+            
+            history_continues = False
+        
+        elif event == 2:
+            # Collision
+            # Sample mu
+            mu = imc_source.sample_mu_isotropic()
+
+            # Sample phi
+            phi = imc_source.sample_phi_isotropic()
+
+    return
+
+@njit(parallel=True)
+def run_crooked_pipe_loop_RN(n_particles, particle_prop, current_time, dt,
+                             mesh_sigma_a, mesh_sigma_s, mesh_fleck,
+                             mesh_z_edges, mesh_r_edges):
+    
+    num_z_cells = len(mesh_z_edges) - 1
+    num_r_cells = len(mesh_r_edges) - 1
+
+    # Global tallies
+    nrgdep = np.zeros((num_z_cells, num_r_cells), dtype=np.float64)
+
+    # Private tallies for each thread
+    n_threads = numba.get_num_threads()
+    priv_dep = np.zeros((n_threads, num_z_cells, num_r_cells), dtype=np.float64)
+
+    endsteptime = current_time + dt
+
+    phys_c = phys.c
+    phys_invc = phys.invc
+
+    # Parallel loop over particles
+    for iptcl in prange(n_particles):
+        tid = numba.np.ufunc.parallel._get_thread_id()
+        # Call the tracking function
+        track_single_particle_RN(
+            iptcl, particle_prop, mesh_z_edges, mesh_r_edges,
+            mesh_sigma_a, mesh_sigma_s, mesh_fleck,
+            phys_c, phys_invc, endsteptime,
+            tid, priv_dep
+        )
+    
+    # --- Reduction step ---
+    for t in range(n_threads):
+        nrgdep += priv_dep[t]
+
+    return nrgdep
 
 
 @njit
@@ -1803,7 +1818,7 @@ def distance_to_census(c: float,
     Parameters
     ----------
     c: float
-        The speed of light in a vacuum.
+        The speed of light.
 
     current_time: float
         The particle's current time.
@@ -1971,3 +1986,177 @@ def treat_boundary_2D(
     # in the X-Y plane. The previous line 'mu = np.cos(omega)' is REMOVED.
 
     return xpos, ypos, mu, omega, x_cell_idx, y_cell_idx, alive
+
+@njit
+def distance_to_z_boundary(z: float,
+                           mu: float,
+                           z_min: float,
+                           z_max: float
+):
+    """
+    Calculates the distance to the nearest axial (Z) boundary,
+
+    
+    :param z (float): Current Z coordinate
+    :param mu (float): Cosine of the polar angle (wrt Z axis)
+    :param z_min (float): Lower Z boundary of the cell
+    :param z_max (float): Upper Z boundary of the cell
+    """
+    if mu == 0:
+        return float('inf')
+    if mu > 0:
+        # Particle is moving "up" toward z_max
+        return (z_max - z) / mu
+    else:
+        # Particle is moving "down" toward z_min
+        return (z_min - z) / mu
+    
+@njit
+def distance_to_r_boundary(r, mu, phi, r_min, r_max):
+    """
+    Calculates the distance to the nearest radial (R) boundary.
+    """
+    # 1. Pre-calculate directional components
+    # sin(theta)^2 = 1 - cos(theta)^2
+    sin_theta_sq = 1.0 - mu**2
+    # Omega_r is the component of the direction vector along the current radius
+    omega_r = np.sqrt(sin_theta_sq) * np.cos(phi)
+    
+    # Quadratic coefficients: Ad^2 + Bd + C = 0
+    # A is the projection of the direction onto the r-theta plane squared
+    a = sin_theta_sq
+    b = 2.0 * r * omega_r
+    
+    # If a is 0, the particle is moving parallel to the Z-axis
+    if a <= 1e-15:
+        return float('inf')
+
+    # 2. Check outer boundary (r_max)
+    c_out = r**2 - r_max**2
+    disc_out = b**2 - 4.0 * a * c_out
+    
+    # For r_max, we always take the positive root (heading outward)
+    # Using the more stable form of the quadratic solution
+    d_rmax = (-b + np.sqrt(max(0, disc_out))) / (2.0 * a)
+    
+    # 3. Check inner boundary (r_min)
+    d_rmin = float('inf')
+    if r_min > 0:
+        c_in = r**2 - r_min**2
+        disc_in = b**2 - 4.0 * a * c_in
+        
+        # If discriminant is negative, we miss the inner cylinder entirely
+        if disc_in >= 0:
+            # The smaller root is the entry point to the inner cylinder
+            res = (-b - np.sqrt(disc_in)) / (2.0 * a)
+            if res > 0:
+                d_rmin = res
+                
+    return min(d_rmax, d_rmin)
+
+@njit
+def get_distance_to_nearest_boundary(r, z, mu, phi, r_min, r_max, z_min, z_max):
+    """
+    Calculates the minimum distance to any boundary in RZ geometry.
+    """
+    # Calculate distance to axial walls
+    d_z = distance_to_z_boundary(z, mu, z_min, z_max)
+    
+    # Calculate distance to radial walls
+    d_r = distance_to_r_boundary(r, mu, phi, r_min, r_max)
+    
+    # The nearest boundary is the minimum of the two
+    return min(d_z, d_r)
+
+@njit
+def move_particle_RZ(r, z, phi, mu, d):
+    """
+    Moves a particle a distance d and updates R, Z, and Phi.
+    """
+    sin_theta = np.sqrt(1.0 - mu**2)
+    projection_xy = d * sin_theta
+    
+    # 1. Update Z (Linear)
+    z_new = z + d * mu
+    
+    # 2. Update R (Law of Cosines)
+    # r_new^2 = r^2 + dist_xy^2 + 2 * r * dist_xy * cos(phi)
+    r_new_sq = r**2 + projection_xy**2 + 2 * r * projection_xy * np.cos(phi)
+    r_new = np.sqrt(max(0, r_new_sq)) # max(0) handles tiny precision errors
+    
+    # 3. Update Phi (Change of local basis)
+    if r_new > 0:
+        cos_phi_new = (r * np.cos(phi) + projection_xy) / r_new
+        # Clamp value to [-1, 1] for safety before acos
+        cos_phi_new = max(-1.0, min(1.0, cos_phi_new))
+        phi_new = np.acos(cos_phi_new)
+    else:
+        # If we hit the exact center, phi is technically undefined; 
+        # usually preserved or reset to 0.
+        phi_new = phi
+        
+    return r_new, z_new, phi_new
+
+@njit
+def treat_boundary_RZ(mu, phi, r_idx, z_idx, 
+                      Nr, Nz, dist_b, d_z, d_rmin, d_rmax):
+    """
+    Logic for crossing cell faces or reflecting.
+    """
+    alive = True
+    
+    # Check Axial Faces
+    if dist_b == d_z:
+        if mu > 0:
+            z_idx += 1
+            if z_idx >= Nz:
+                alive = False # Vacuum Top
+        else:
+            z_idx -= 1
+            if z_idx < 0:
+                # Bottom Reflection
+                alive = False
+                
+    # Check Radial Faces
+    elif dist_b == d_rmax:
+        r_idx += 1
+        if r_idx >= Nr: alive = False # Vacuum Outer
+        
+    elif dist_b == d_rmin:
+        r_idx -= 1
+        if r_idx < 0:
+            # Hitting Centerline (r=0)
+            # Naturally reflective: change phi to point outward
+            r_idx = 0
+            phi = phi + np.pi 
+            
+    return r_idx, z_idx, mu, phi, alive
+
+@njit
+def get_individual_r_distances(r, mu, phi, r_min, r_max):
+    sin_theta_sq = 1.0 - mu**2
+    # Ensure sin_theta_sq is not negative due to precision
+    a = max(0.0, sin_theta_sq)
+    
+    if a <= 1e-15:
+        return float('inf'), float('inf')
+
+    omega_r = np.sqrt(a) * np.cos(phi)
+    b = 2.0 * r * omega_r
+    
+    # Distance to Outer (r_max)
+    c_out = r**2 - r_max**2
+    disc_out = max(0.0, b**2 - 4.0 * a * c_out)
+    d_rmax = (-b + np.sqrt(disc_out)) / (2.0 * a)
+    
+    # Distance to Inner (r_min)
+    d_rmin = float('inf')
+    if r_min > 0:
+        c_in = r**2 - r_min**2
+        disc_in = b**2 - 4.0 * a * c_in
+        if disc_in >= 0:
+            res = (-b - np.sqrt(disc_in)) / (2.0 * a)
+            if res > 1e-13: # Nudge for precision
+                d_rmin = res
+                
+    return d_rmin, d_rmax
