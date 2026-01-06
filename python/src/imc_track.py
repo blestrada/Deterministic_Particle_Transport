@@ -16,55 +16,53 @@ import imc_source
 
 @njit
 def chi_equation(chi, x_0, x_1, dx, X_s):
-    chi = np.asarray(chi).item()  # Ensure chi is a scalar
-    X_s = np.asarray(X_s).item()  # Ensure X_s is a scalar
+    chi = np.asarray(chi).item()
+    X_s = np.asarray(X_s).item()
 
-    # Ensure chi * dx is treated as a scalar
     chi_dx = chi * dx
 
     if np.abs(chi_dx) > 100:
         exp_chi_dx = np.exp(50)  # Limit exponential growth
     elif np.abs(chi_dx) > 1e-5:
-        exp_chi_dx = np.exp(chi_dx).item()  # Ensure it's a scalar
+        exp_chi_dx = np.exp(chi_dx).item()  
     else:
         exp_chi_dx = 1.0 + chi_dx + 0.5 * chi_dx ** 2  # Taylor expansion
 
-    # Compute numerator and denominator as scalars
+    # Compute numerator and denominator 
     numerator = 1.0 - chi * x_0 + exp_chi_dx * (chi * x_1 - 1.0)
     denominator = chi * (exp_chi_dx - 1.0)
 
-    # Compute result and ensure it's a scalar
+    # Compute result
     scalar_result = numerator / denominator
     return scalar_result - X_s
 
 @njit
 def gamma_equation(gamma, y_0, y_1, dy, Y_s):
-    gamma = np.asarray(gamma).item()  # Ensure chi is a scalar
-    Y_s = np.asarray(Y_s).item()  # Ensure X_s is a scalar
+    gamma = np.asarray(gamma).item()  
+    Y_s = np.asarray(Y_s).item()  
 
-    # Ensure gamma * dy is treated as a scalar
     gamma_dy = gamma * dy
 
     if np.abs(gamma_dy) > 100:
         exp_gamma_dy = np.exp(50)  # Limit exponential growth
     elif np.abs(gamma_dy) > 1e-5:
-        exp_gamma_dy = np.exp(gamma_dy).item()  # Ensure it's a scalar
+        exp_gamma_dy = np.exp(gamma_dy).item()  
     else:
         exp_gamma_dy = 1.0 + gamma_dy + 0.5 * gamma_dy ** 2  # Taylor expansion
 
-    # Compute numerator and denominator as scalars
+    # Compute numerator and denominator 
     numerator = 1.0 - gamma * y_0 + exp_gamma_dy * (gamma * y_1 - 1.0)
     denominator = gamma * (exp_gamma_dy - 1.0)
 
-    # Compute result and ensure it's a scalar
+    # Compute result
     scalar_result = numerator / denominator
     return scalar_result - Y_s
 
 
 @njit
 def tau_equation(tau, t_0, t_1, dt, T_s):
-    tau = np.asarray(tau).item()  # Ensure chi is a scalar
-    T_s = np.asarray(T_s).item()  # Ensure X_s is a scalar
+    tau = np.asarray(tau).item()  
+    T_s = np.asarray(T_s).item()  
     if np.abs(tau * dt) > 100:
         exp_tau_dt = np.exp(50)
     elif np.abs(tau * dt) > 1e-5:
@@ -77,15 +75,7 @@ def tau_equation(tau, t_0, t_1, dt, T_s):
 
 @njit
 def p_x_t_solve(chi, tau, dx, x_0, x, t, t_0, dt):
-    # print(f'chi = {chi}')
-    # print(f'tau = {tau}')
-    # print(f'dx = {dx}')
-    # print(f'x_0 = {x_0}')
-    # print(f'x = {x}')
-    # print(f't = {t}')
-    # print(f't_0 = {t_0}')
-    # print(f'dt = {dt}')
-
+    
     if np.abs(chi * dx) > 100:
         exp_chi_dx = np.exp(50)
     elif np.abs(chi * dx) > 1e-5:
@@ -121,15 +111,7 @@ def p_x_t_solve(chi, tau, dx, x_0, x, t, t_0, dt):
 
 @njit
 def p_x_y_t_solve(chi, gamma, tau, dx, dy, dt, x_0, x, y_0, y, t_0, t):
-    # with objmode:
-    #     print(f'chi = {chi}')
-    #     print(f'tau = {tau}')
-    #     print(f'dx = {dx}')
-    #     print(f'x_0 = {x_0}')
-    #     print(f'x = {x}')
-    #     print(f't = {t}')
-    #     print(f't_0 = {t_0}')
-    #     print(f'dt = {dt}')
+    
     if np.abs(chi * dx) > 100:
         exp_chi_dx = np.exp(50)
     elif np.abs(chi * dx) > 1e-5:
@@ -1257,14 +1239,13 @@ def track_single_particle(
         # Update particle energy
         nrg = newnrg
 
-        # --- NEW ROULETTE / THRESHOLD CHECK ---
+        # Energy cutoff echeck
         # Kill particle if nrg < 0.01 * startnrg
         if nrg < 0.01 * startnrg:
             priv_dep[tid, z_cell_idx, r_cell_idx] += nrg  # Deposit remaining energy
             particle_prop[iptcl, 8] = -1.0               # Mark as dead
             history_continues = False
             continue # Exit loop for this particle
-        # --------------------------------------
 
         # Event Handling
         if event == 0:
@@ -1374,14 +1355,13 @@ def generate_scattered_particles(
     n_scattered_particles : int
         Number of scattered particles generated.
     """
+    # print(f'sum of nrgscattered = {np.sum(nrgscattered)}')
     nz_cells = len(mesh_z_edges) - 1
     nr_cells = len(mesh_r_edges) - 1
 
     # Pre-calculate RZ volumes for the entire mesh
     dz = np.diff(mesh_z_edges)
     dr2 = np.diff(mesh_r_edges**2)
-    # volumes[i, j] = pi * (r_out^2 - r_in^2) * dz
-    volumes = np.pi * np.outer(dz, dr2)
 
     # Allocate scattered particle array
     scattered_particles = np.zeros((ptcl_max_array_size, 10), dtype=np.float64)
@@ -1546,7 +1526,6 @@ def track_single_particle_RN(iptcl, particle_prop, mesh_z_edges, mesh_r_edges,
         nrg = newnrg
 
         # --- NEW ROULETTE / THRESHOLD CHECK ---
-        # Kill particle if nrg < 0.01 * startnrg
         if nrg < 0.01 * startnrg:
             priv_dep[tid, z_cell_idx, r_cell_idx] += nrg  # Deposit remaining energy
             particle_prop[iptcl, 8] = -1.0               # Mark as dead
@@ -1583,8 +1562,7 @@ def track_single_particle_RN(iptcl, particle_prop, mesh_z_edges, mesh_r_edges,
             
             history_continues = False
         
-        elif event == 2:
-            # Collision
+        elif event == 2: # Collision
             # Sample mu
             mu = imc_source.sample_mu_isotropic()
 

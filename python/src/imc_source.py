@@ -59,7 +59,34 @@ def deterministic_sample_radius(r_min: float,
     # apply the PDF
     r_values = np.sqrt(r_min**2 + p_values * (r_max**2 - r_min**2))
     return r_values
+
+@njit
+def weighted_sample_radius(r_min: float,
+                           r_max: float,
+                           n_samples: int
+) -> tuple[NDArray, NDArray]:
+    """
+    Uniformly sample R and return weights based on the 
+    area-correction required for a cylindrical shell.
+    """
+    # 1. Create uniformly spaced radii
+    # We use centered points to avoid sampling exactly at r_min or r_max
+    dr = (r_max - r_min) / n_samples
+    r_values = np.linspace(r_min + 0.5*dr, r_max - 0.5*dr, n_samples)
     
+    # 2. Calculate the weights
+    # The physical PDF proportional to 'r' needs to be normalized
+    # The weight is essentially (Physical Area of ring) / (Uniformly assumed area)
+    
+    # Pre-calculate denominator for the physical PDF normalization
+    area_norm = r_max**2 - r_min**2
+    
+    # Weight = (2 * r * dr) / (dr * (r_max + r_min)) effectively
+    # Simplified weight:
+    weights = (2 * r_values * (r_max - r_min)) / area_norm
+    
+    return r_values, weights
+
 @njit
 def deterministic_sample_z(z_min: float,
                            z_max:float,
@@ -974,7 +1001,8 @@ def crooked_pipe_surface_particles(n_particles, particle_prop,
     print(f'Total energy emitted by the surface = {e_surf}')
 
     # Generate radii
-    r_values = deterministic_sample_radius(0.0, 0.5, surface_Nr)
+    # r_values = deterministic_sample_radius(0.0, 0.5, surface_Nr)
+    r_values, r_weights = weighted_sample_radius(0.0, 0.5, surface_Nr)
     print(f'r_values = {r_values}')
 
     # Generate mu
@@ -993,21 +1021,23 @@ def crooked_pipe_surface_particles(n_particles, particle_prop,
     print(f'Number of surface source particles = {n_source_ptcls}')
 
     # Energy per particle
-    nrg = e_surf / n_source_ptcls
+    base_nrg = e_surf / n_source_ptcls
 
     z = 1e-12
     z_idx = 0
 
-    for r in r_values:
-        # Find r_idx: the cell where r falls between mesh_r_edges[k] and mesh_r_edges[k+1]
+    for i, r in enumerate(r_values):
         r_idx = np.searchsorted(mesh_r_edges, r) - 1
+        
+        # This is the "Corrected Energy" for all particles at this radius
+        weighted_nrg = base_nrg * r_weights[i]
         for mu in mu_values:
             for phi in phi_values:
                 for ttt in t_values:
                     if n_particles < part.max_array_size:
-                        startnrg = nrg
+                        startnrg = weighted_nrg
                         # Assign: [emission_time, z_idx, r_idx, z, r, mu, phi, frq, nrg, startnrg]
-                        particle_prop[n_particles] = [ttt, z_idx, r_idx, z, r, mu, phi, 0, nrg, startnrg]
+                        particle_prop[n_particles] = [ttt, z_idx, r_idx, z, r, mu, phi, 0, weighted_nrg, startnrg]
                         n_particles += 1
                     else:
                         print("Warning: Maximum number of particles reached!")
@@ -1046,7 +1076,8 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
             r_min = mesh_r_edges[ir]
             r_max = mesh_r_edges[ir+1]
             r_samples = part.Ny[iz, ir]
-            r_values = deterministic_sample_radius(r_min, r_max, r_samples)
+            # r_values = deterministic_sample_radius(r_min, r_max, r_samples)
+            r_values, r_weights = weighted_sample_radius(r_min, r_max, r_samples)
 
             # Generate mu
             mu_samples = part.Nmu[iz, ir]
@@ -1072,18 +1103,18 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
             zone_volume * 
             dt)
             
-            nrg = e_cell / n_source_ptcls
-            startnrg = nrg
+            base_nrg = e_cell / n_source_ptcls
 
             # Loop to create particles
             for z in z_values:
-                for r in r_values:
+                for i, r in enumerate(r_values):
+                    weighted_nrg = base_nrg * r_weights[i]
                     for mu in mu_values:
                         for phi in phi_values:
                             for ttt in t_values:
                                 if n_particles < part.max_array_size:
                                     # Assign: [emission_time, z_idx, r_idx, z, r, mu, phi, frq, nrg, startnrg]
-                                    particle_prop[n_particles] = [ttt, iz, ir, z, r, mu, phi, 0, nrg, startnrg]
+                                    particle_prop[n_particles] = [ttt, iz, ir, z, r, mu, phi, 0, weighted_nrg, weighted_nrg]
                                     n_particles += 1
                                 else:
                                     print("Warning: Maximum number of particles reached!")

@@ -718,8 +718,9 @@ def crooked_pipe(output_file):
     mesh.radtemp = np.full((num_x_idx, num_y_idx), 0.0)
 
     thin_density = 0.01 # [g/cm^3]
-    thick_density = 10.0 # [g/cm^3]
-
+    thick_density = 1.0 # [g/cm^3]
+    print(f'thin_density = {thin_density} g/cc')
+    print(f'thick_density = {thick_density} g/cc')
     thin_mass_opacity = 20.0 #[cm^2/g]
     thick_mass_opacity = 200.0 # [cm^2/g]
 
@@ -794,7 +795,7 @@ def crooked_pipe(output_file):
 
     print(f'mat.b = {mat.b}')
     # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
-    part.max_array_size = 200_000_000
+    part.max_array_size = 500_000_000
     part.particle_prop = np.zeros((part.max_array_size, 10), dtype=np.float64)
     part.n_particles = 0
 
@@ -803,12 +804,12 @@ def crooked_pipe(output_file):
     time.time = 0.0
     time.dt = 0.001    # shakes
     time.dt_max = 1.0  # shakes
-    t_final = 10.0
+    t_final = 100.0
     time.dt_rampfactor = 1.1
-    part.surface_Nmu = 6
-    part.surface_N_omega = 6
-    part.surface_Ny = 50
-    part.surface_Nt = 50
+    part.surface_Nmu = 16
+    part.surface_N_omega = 16
+    part.surface_Ny = 20
+    part.surface_Nt = 20
     bcon.T0 = 0.3 # keV
     part.n_input = 500_000
     parallel = True
@@ -886,9 +887,12 @@ def crooked_pipe(output_file):
                         # Step 2: Implicit scattering loop
                         epsilon = 1e-3
                         iterations = 0
+                        max_iter = 1000  # Safety cap to prevent infinite loops
                         converged = False
+
                         prev_nrgscattered = np.copy(original_nrg_scattered)
-                        while not converged:
+
+                        while not converged and iterations < max_iter:
                             # Generate scattered particles
                             scattered_particles, n_scattered_particles = imc_track.generate_scattered_particles(
                                 nrgscattered, x_Es, y_Es, tEs,
@@ -946,12 +950,16 @@ def crooked_pipe(output_file):
                             iterations += 1
                         # After converging, dump remaining scattered energy
                         mesh.nrgdep += nrgscattered
-                        print(f'Number of scattering iterations = {iterations}')    
+                        print(f'Number of scattering iterations = {iterations}')
+                        if converged:
+                            print(f'Converged in {iterations} iterations.')
+                        else:
+                            print(f'Reached max_iter ({max_iter}) without full convergence. Final error: {rel_l2_error:.2e}') 
                     else:
                         mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run_crooked_pipe(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mesh.thin_cells, part.Nmu)
                     
-                    # Test RN version
-                    # mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run2D(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck)
+                #     # Test RN version
+                #     # mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run2D(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck)
                 elif part.mode == 'rn':
                     if parallel:
                         mesh.nrgdep = imc_track.run_crooked_pipe_loop_RN(

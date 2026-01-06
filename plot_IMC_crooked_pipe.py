@@ -8,7 +8,7 @@ import matplotlib.animation as animation
 # df = pd.read_csv("output_DPT_nx2_ny2_nt10_nmu2_nphi16.csv")
 df = pd.read_csv('temperature_history.csv')
 # df = pd.read_csv("temperature_history_IMC_1e6.csv")
-df_imc = pd.read_csv("temperature_history.csv")
+df_imc = pd.read_csv("temperature_history_ts0.3_sigma2000_imc.csv")
 surface_temp=0.3
 # Define the indices of interest
 point_1_indices = [
@@ -253,16 +253,16 @@ plt.figure(figsize=(8,6))
 markersize=2.0
 
 # DPT temp
-# plt.plot(avg_temp_point1["time"], avg_temp_point1["temp"], 
-#          marker="+", color="blue", label="DPT", markersize=markersize)
-# plt.plot(avg_temp_point2["time"], avg_temp_point2["temp"], 
-#          marker="+", color="blue", markersize=markersize)
-# plt.plot(avg_temp_point3["time"], avg_temp_point3["temp"], 
-#          marker="+", color="blue", markersize=markersize )
-# plt.plot(avg_temp_point4["time"], avg_temp_point4["temp"], 
-#          marker="+", color="red", )
-# plt.plot(avg_temp_point5["time"], avg_temp_point5["temp"], 
-#          marker="+", color="red", )
+plt.plot(avg_temp_point1["time"], avg_temp_point1["temp"], 
+         marker="+", color="blue", label="DPT", markersize=markersize)
+plt.plot(avg_temp_point2["time"], avg_temp_point2["temp"], 
+         marker="+", color="blue", markersize=markersize)
+plt.plot(avg_temp_point3["time"], avg_temp_point3["temp"], 
+         marker="+", color="blue", markersize=markersize )
+plt.plot(avg_temp_point4["time"], avg_temp_point4["temp"], 
+         marker="+", color="blue", markersize=markersize)
+plt.plot(avg_temp_point5["time"], avg_temp_point5["temp"], 
+         marker="+", color="blue", markersize=markersize)
 
 # DPT rad temp
 # plt.plot(avg_radtemp_point1["time"], avg_radtemp_point1["radtemp"], 
