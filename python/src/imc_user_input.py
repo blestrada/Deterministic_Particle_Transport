@@ -44,7 +44,7 @@ def read(input_file):
             elif keyw == "ny":
                 part.Ny = int(keyv)
 
-            elif keyw == "surface_Nmu":
+            elif keyw == "surface_nmu":
                 part.surface_Nmu = int(keyv)
 
             elif keyw == "x_edges":
@@ -124,7 +124,7 @@ def read(input_file):
             elif keyw == 'ns':
                 part.n_input = int(keyv)
 
-            elif keyw == 'N_omega':
+            elif keyw == 'nomega':
                 part.N_omega = int(keyv)
             else:
                 continue

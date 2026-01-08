@@ -64,7 +64,7 @@ def crooked_pipe_update(mesh_sigma_a, temp, dt):
             f"Invalid Fleck factor detected! "
             f"min = {np.min(fleck)}, max = {np.max(fleck)}"
         )
-
+    print(f'fleck = {fleck}')
     return fleck
 
 

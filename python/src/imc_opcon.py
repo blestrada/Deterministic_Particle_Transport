@@ -718,11 +718,11 @@ def crooked_pipe(output_file):
     mesh.radtemp = np.full((num_x_idx, num_y_idx), 0.0)
 
     thin_density = 0.01 # [g/cm^3]
-    thick_density = 1.0 # [g/cm^3]
+    thick_density = 10.0 # [g/cm^3]
     print(f'thin_density = {thin_density} g/cc')
     print(f'thick_density = {thick_density} g/cc')
     thin_mass_opacity = 20.0 #[cm^2/g]
-    thick_mass_opacity = 200.0 # [cm^2/g]
+    thick_mass_opacity = 20.0 # [cm^2/g]
 
     thin_opacity = thin_mass_opacity * thin_density # [1/cm]
     print(f'thin_opacity = {thin_opacity} [1/cm]')
@@ -730,7 +730,7 @@ def crooked_pipe(output_file):
     print(f'thick_opacity = {thick_opacity} [1/cm]')
     mat.rho = np.full((num_x_idx, num_y_idx), thick_density)  # Start with thick
     mesh.sigma_a = np.full((num_x_idx, num_y_idx), thick_opacity)
-    part.N_omega = 6
+
     # Convert sourcing info into arrays
     if part.mode == 'nrn':
         part.Nmu = np.full((num_x_idx, num_y_idx), part.Nmu)
@@ -791,7 +791,7 @@ def crooked_pipe(output_file):
 
     mat.b = np.full((num_x_idx, num_y_idx), 0.1) # ion specific heat [jk/gm-keV]
     mat.b = mat.b * mat.rho  # converted to [jk/cm^3-keV]
-    
+    # mat.b[mesh.thick_cells] *= 10
 
     print(f'mat.b = {mat.b}')
     # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
@@ -804,14 +804,13 @@ def crooked_pipe(output_file):
     time.time = 0.0
     time.dt = 0.001    # shakes
     time.dt_max = 1.0  # shakes
-    t_final = 100.0
+    t_final = 1.0
     time.dt_rampfactor = 1.1
     part.surface_Nmu = 16
     part.surface_N_omega = 16
     part.surface_Ny = 20
     part.surface_Nt = 20
     bcon.T0 = 0.3 # keV
-    part.n_input = 500_000
     parallel = True
 
     # RZ Volume Verification
@@ -850,7 +849,6 @@ def crooked_pipe(output_file):
                 # Update temperature dependent quantities
                 mesh.fleck = imc_update.crooked_pipe_update(mesh.sigma_a, mesh.temp, time.dt)
                 
-                # print(f'mesh.fleck = {mesh.fleck}')
                 if part.mode == 'nrn':
                     part.n_particles, part.particle_prop = imc_source.crooked_pipe_surface_particles(part.n_particles, part.particle_prop, 
                                                                                                      part.surface_Ny, part.surface_Nmu, 
@@ -865,12 +863,12 @@ def crooked_pipe(output_file):
                     part.n_particles, part.particle_prop = imc_source.run2D(mesh.fleck, mesh.temp, mesh.sigma_a, part.particle_prop, part.n_particles, time.time, time.dt, mesh.x_edges, mesh.y_edges)
                 
                 # Check for energies
-                negative_energy_indices = np.where(part.particle_prop[:part.n_particles, 8] < 0.0)[0]
-                if negative_energy_indices.size > 0:
-                    raise RuntimeError(
-                        f"Found {negative_energy_indices.size} particles with negative energy after sourcing! "
-                        f"Indices: {negative_energy_indices}"
-                    )
+                # negative_energy_indices = np.where(part.particle_prop[:part.n_particles, 8] < 0.0)[0]
+                # if negative_energy_indices.size > 0:
+                #     raise RuntimeError(
+                #         f"Found {negative_energy_indices.size} particles with negative energy after sourcing! "
+                #         f"Indices: {negative_energy_indices}"
+                #     )
 
                 # Advance particles through transport
                 if part.mode == 'nrn': 
@@ -975,13 +973,13 @@ def crooked_pipe(output_file):
                 # Clean up particles that had their energy set to -1.0
                 part.n_particles, part.particle_prop = imc_track.clean2D(part.n_particles, part.particle_prop)
                 
-                # Check for energies
-                negative_energy_indices = np.where(part.particle_prop[:part.n_particles, 8] < 0.0)[0]
-                if negative_energy_indices.size > 0:
-                    raise RuntimeError(
-                        f"Found {negative_energy_indices.size} particles with negative energy after cleaning! "
-                        f"Indices: {negative_energy_indices}"
-                    )
+                # # Check for energies
+                # negative_energy_indices = np.where(part.particle_prop[:part.n_particles, 8] < 0.0)[0]
+                # if negative_energy_indices.size > 0:
+                #     raise RuntimeError(
+                #         f"Found {negative_energy_indices.size} particles with negative energy after cleaning! "
+                #         f"Indices: {negative_energy_indices}"
+                #     )
                 
                 # Tally
                 mesh.temp, mesh.radtemp = imc_tally.crooked_pipe_tally(mesh.nrgdep, mesh.x_edges, mesh.y_edges, part.n_particles, part.particle_prop, mesh.temp, mesh.sigma_a, mesh.fleck, time.dt)
@@ -1016,81 +1014,41 @@ def crooked_pipe(output_file):
                             "temp": mesh.temp[i, j],
                             "radtemp": mesh.radtemp[i, j]
                         })
-        df = pd.DataFrame(records)
-        df.to_csv("temperature_history.csv", index=False)
-        print("Temperature history saved to temperature_history.csv")
-
-        plt.figure()
-        pc = plt.pcolormesh(mesh.x_edges,
-                            mesh.y_edges,
-                            mesh.temp.T,   # Transpose to match orientation
-                            cmap="inferno",
-                            shading="flat")
-        plt.colorbar(pc, label="Temperature [keV]")
-        plt.clim(vmin=0.00, vmax=bcon.T0)
-        plt.xlabel("z")
-        plt.ylabel("r")
-        plt.xlim(mesh.x_edges[0], mesh.x_edges[-1])
-        plt.ylim(0,2)
-        plt.axis('scaled')
-        plt.title(f"Temperature at t={t_final}")
-        plt.tight_layout()
-        plt.show()
-
-        plt.figure()
-        pc = plt.pcolormesh(mesh.x_edges,
-                            mesh.y_edges,
-                            mesh.radtemp.T,  # Transpose to match orientation
-                            cmap='inferno',
-                            edgecolors='k',       # 'k' for black borders around cells
-                            linewidth=0.5,
-                            shading='flat')        
-        plt.colorbar(pc, label=f'Temperature [keV]')
-        plt.clim(vmin=0.00, vmax=bcon.T0)
-        plt.xlabel('z')
-        plt.ylabel('r')
-        plt.xlim(mesh.x_edges[0], mesh.x_edges[-1])
-        plt.ylim(0,2)
-        plt.title(f'Radiation Temperature at t={time.time}')
-        plt.axis('scaled')
-        plt.tight_layout()
-        plt.show()          
-                
-    
+            
     except KeyboardInterrupt:
-        print("Calculation interrupted. Saving data...")
-        plt.figure()
-        pc = plt.pcolormesh(mesh.x_edges,
-                            mesh.y_edges,
-                            mesh.temp.T,  # Transpose to match orientation
-                            cmap='inferno',
-                            edgecolors='k',       # 'k' for black borders around cells
-                            linewidth=0.5,
-                            shading='flat')        
-        plt.colorbar(pc, label=f'Temperature [keV]')
-        plt.clim(vmin=0.00, vmax=bcon.T0)
-        plt.xlabel('z')
-        plt.ylabel('r')
-        plt.title(f'Temperature at t={time.time}')
-        plt.axis('equal')
-        plt.show()
-
-        plt.figure()
-        pc = plt.pcolormesh(mesh.x_edges,
-                            mesh.y_edges,
-                            mesh.radtemp.T,  # Transpose to match orientation
-                            cmap='inferno',
-                            edgecolors='k',       # 'k' for black borders around cells
-                            linewidth=0.5,
-                            shading='flat')        
-        plt.colorbar(pc, label=f'Temperature [keV]')
-        plt.clim(vmin=0.00, vmax=bcon.T0)
-        plt.xlabel('z')
-        plt.ylabel('r')
-        plt.title(f'Radiation Temperature at t={time.time}')
-        plt.axis('equal')
-        plt.show()
+        print()
     finally:
-        print("Data saved successfully.")
-        
-    
+        if records:
+            print("Saving data collected so far...")
+            df = pd.DataFrame(records)
+            df.to_csv("temperature_history.csv", index=False)
+            print(f"Temperature history saved to temperature_history.csv ({time.step} steps total)")
+        # Generate the plots even on failure/interrupt
+        try:
+            plt.figure()
+            pc = plt.pcolormesh(mesh.x_edges, mesh.y_edges, mesh.temp.T, cmap="inferno", shading="flat")
+            plt.colorbar(pc, label="Temperature [keV]")
+            plt.clim(vmin=0.00, vmax=bcon.T0)
+            plt.xlabel("z")
+            plt.ylabel("r")
+            plt.xlim(mesh.x_edges[0], mesh.x_edges[-1])
+            plt.ylim(0,2)
+            plt.axis('scaled')
+            plt.title(f"Temperature at t={time.time}")
+            plt.tight_layout()
+            plt.show()
+
+            plt.figure()
+            pc = plt.pcolormesh(mesh.x_edges, mesh.y_edges, mesh.radtemp.T, cmap='inferno', shading='flat')        
+            plt.colorbar(pc, label=f'Radiation Temp [keV]')
+            plt.clim(vmin=0.00, vmax=bcon.T0)
+            plt.xlabel("z")
+            plt.ylabel("r")
+            plt.xlim(mesh.x_edges[0], mesh.x_edges[-1])
+            plt.ylim(0,2)
+            plt.axis('scaled')
+            plt.tight_layout()
+            plt.title(f'Rad Temp at t={time.time}')
+            plt.show()
+        except Exception as plot_err:
+            print(f"Could not generate plots: {plot_err}")

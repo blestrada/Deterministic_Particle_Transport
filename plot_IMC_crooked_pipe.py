@@ -8,7 +8,8 @@ import matplotlib.animation as animation
 # df = pd.read_csv("output_DPT_nx2_ny2_nt10_nmu2_nphi16.csv")
 df = pd.read_csv('temperature_history.csv')
 # df = pd.read_csv("temperature_history_IMC_1e6.csv")
-df_imc = pd.read_csv("temperature_history_ts0.3_sigma2000_imc.csv")
+# df_imc = pd.read_csv("temperature_history_ts0.3_sigma2000_imc.csv")
+df_imc = pd.read_csv("temperature_history_IMC.csv")
 surface_temp=0.3
 # Define the indices of interest
 point_1_indices = [

@@ -1241,11 +1241,11 @@ def track_single_particle(
 
         # Energy cutoff echeck
         # Kill particle if nrg < 0.01 * startnrg
-        if nrg < 0.01 * startnrg:
-            priv_dep[tid, z_cell_idx, r_cell_idx] += nrg  # Deposit remaining energy
-            particle_prop[iptcl, 8] = -1.0               # Mark as dead
-            history_continues = False
-            continue # Exit loop for this particle
+        # if nrg < 0.01 * startnrg:
+        #     priv_dep[tid, z_cell_idx, r_cell_idx] += nrg  # Deposit remaining energy
+        #     particle_prop[iptcl, 8] = -1.0               # Mark as dead
+        #     history_continues = False
+        #     continue # Exit loop for this particle
 
         # Event Handling
         if event == 0:
