@@ -114,6 +114,42 @@ def deterministic_sample_mu_lambertian(n_samples) -> NDArray:
 def deterministic_sample_phi_isotropic(n_samples) -> NDArray:
     return (0.0 + (np.arange(n_samples) + 0.5)) * 2 * np.pi / n_samples
 
+@njit
+def deterministic_sample_t_tanh_dist(n_samples, 
+                                     alpha, 
+                                     t_lower, 
+                                     t_upper
+) -> tuple[NDArray, NDArray]:
+    """
+    Sample T non-uniformly to get better clustering near the edges.
+    
+    Based on the tanh mapping: x = 0.5 * [tanh(alpha * j) / tanh(alpha)]
+    """
+    # 1. Calculate normalized index j in range [-(N-1)/N, (N-1)/N] 
+    # as per Equation (27) in the notes
+    i = np.arange(n_samples)
+    j = (i + 0.5) / n_samples - 0.5
+    j_scaled = j * 2  # Scale to approximately [-1, 1]
+    
+    dt = t_upper - t_lower
+    t_mid = (t_upper + t_lower) / 2
+    
+    # 2. Map j to time values using Equation (30)
+    # We normalize by tanh(alpha) to ensure the range stays within [t_lower, t_upper]
+    t_values = t_mid + (dt / 2) * (np.tanh(alpha * j_scaled) / np.tanh(alpha))
+    
+    # 3. Calculate weights W(i) = dx/di per Equation (31)
+    # The derivative of tanh(u) is sech^2(u) = 1 / cosh^2(u)
+    # This compensates for the high density of points at the edges.
+    weights = 1.0 / (np.cosh(alpha * j_scaled)**2)
+    
+    # 4. Normalize weights so their sum equals n_samples
+    # This ensures the 'total energy' is conserved
+    weights /= np.sum(weights)
+    
+    return t_values, weights
+
+
 
 def calculate_even_angles(ef, ef_ref=1/3, ef_max=1.0, n_min=2, n_max=16):
     # Calculate normalized deviation
@@ -1088,7 +1124,10 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
             phi_values = deterministic_sample_phi_isotropic(phi_samples)
             
             # Generate t
-            t_values = current_time + (np.arange(part.Nt[iz, ir]) + 0.5) * dt / part.Nt[iz, ir]
+            t_samples = part.Nt[iz, ir]
+            t_min = current_time
+            t_max = current_time + dt
+            t_values, t_weights = deterministic_sample_t_tanh_dist(t_samples, alpha=1.0, t_min, t_max)
 
             # The total number of source particle in the cell
             n_source_ptcls = len(z_values) * len(r_values) * len(mu_values) * len(phi_values) * len(t_values)
@@ -1107,12 +1146,12 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
 
             # Loop to create particles
             for z in z_values:
-                for i, r in enumerate(r_values):
-                    weighted_nrg = base_nrg * r_weights[i]
+                for i_r, r in enumerate(r_values):
                     for mu in mu_values:
                         for phi in phi_values:
-                            for ttt in t_values:
+                            for i_t, ttt in enumerate(t_values):
                                 if n_particles < part.max_array_size:
+                                    weighted_nrg = base_nrg * r_weights[i_r] * t_weights[i_t]
                                     # Assign: [emission_time, z_idx, r_idx, z, r, mu, phi, frq, nrg, startnrg]
                                     particle_prop[n_particles] = [ttt, iz, ir, z, r, mu, phi, 0, weighted_nrg, weighted_nrg]
                                     n_particles += 1

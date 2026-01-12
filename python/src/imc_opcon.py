@@ -804,7 +804,7 @@ def crooked_pipe(output_file):
     time.time = 0.0
     time.dt = 0.001    # shakes
     time.dt_max = 1.0  # shakes
-    t_final = 1.0
+    t_final = 100.0
     time.dt_rampfactor = 1.1
     part.surface_Nmu = 16
     part.surface_N_omega = 16
