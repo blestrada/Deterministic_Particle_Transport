@@ -39,6 +39,7 @@ def sample_mu_isotropic() -> float:
 def sample_phi_isotropic() -> float:
     return 2 * np.pi * np.random.uniform()
 
+@njit
 def sample_mu_lambertian() -> float:
     """
     Produce mu between 0 and 1 with a lambertian distribution

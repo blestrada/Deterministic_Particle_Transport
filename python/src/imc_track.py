@@ -1396,7 +1396,7 @@ def generate_scattered_particles(
 
             # Space, angle, and time grids
             z_values = imc_source.deterministic_sample_z(mesh_z_edges[iz], mesh_z_edges[iz+1], ptcl_Nx[iz,ir])
-            r_values = imc_source.deterministic_sample_radius(mesh_r_edges[ir], mesh_r_edges[ir+1], ptcl_Ny[iz,ir])
+            r_values, r_weights = imc_source.weighted_sample_radius(mesh_r_edges[ir], mesh_r_edges[ir+1], ptcl_Ny[iz,ir])
             mu_values = imc_source.deterministic_sample_mu_isotropic(ptcl_Nmu[iz,ir])
             phi_values = imc_source.deterministic_sample_phi_isotropic(ptcl_N_phi[iz,ir])
             t_values = current_time + (np.arange(ptcl_Nt[iz, ir]) + 0.5) * dt / ptcl_Nt[iz, ir]
@@ -1416,7 +1416,8 @@ def generate_scattered_particles(
 
             # Create scattered particles
             for z in z_values:
-                for r in r_values:
+                for i_r, r in enumerate(r_values):
+                    w_r = r_weights[i_r]
                     for mu in mu_values:
                         for phi in phi_values:
                             for ttt in t_values:
@@ -1433,7 +1434,8 @@ def generate_scattered_particles(
                                 )
                                 if P < 0:
                                     raise ValueError(f"Negative probability P={P}")
-                                P_tally[iz, ir] += P
+                                combined_w = P * w_r
+                                P_tally[iz, ir] += combined_w
 
                                 idx = n_scattered_particles
                                 scattered_particles[idx, 0] = ttt   # emission time
@@ -1445,20 +1447,95 @@ def generate_scattered_particles(
                                 scattered_particles[idx, 6] = phi   # phi
                                 scattered_particles[idx, 7] = 0     # frequency (placeholder)
                                 scattered_particles[idx, 8] = nrg   # particle energy
-                                scattered_particles[idx, 9] = P     # probability weight
+                                scattered_particles[idx, 9] = combined_w     # probability weight
 
                                 n_scattered_particles += 1
-    # Put correct energy
+    # Final energy correction loop
     for i in range(n_scattered_particles):
-        # Get P and icell
         iz = int(scattered_particles[i, 1])
         ir = int(scattered_particles[i, 2])
-        P = scattered_particles[i, 9]
-        # Set particle energy
-        nrg = nrgscattered[iz, ir] * P / P_tally[iz, ir]
-        scattered_particles[idx, 8] = nrg
-        startnrg = nrg
-        scattered_particles[idx, 9] = startnrg
+        
+        # This is the (P * w_r) we stored in index 9
+        combined_w = scattered_particles[i, 9]
+        
+        # Corrected Energy Calculation
+        # Energy = Total Cell Energy * (Individual Weight / Sum of Weights in Cell)
+        final_nrg = nrgscattered[iz, ir] * (combined_w / P_tally[iz, ir])
+        
+        scattered_particles[i, 8] = final_nrg
+        # Typically, you'd store the weight here or the energy, depending on your solver
+        scattered_particles[i, 9] = final_nrg
+    
+    # print(f'Sum of generated particles energies = {np.sum(scattered_particles[:, 8])}')
+    return scattered_particles, n_scattered_particles
+
+@njit
+def generate_scattered_particles_no_distribution(
+    nrgscattered,
+    x_Es, y_Es, t_Es,
+    mesh_z_edges, mesh_r_edges, mesh_dz, mesh_dr,
+    ptcl_max_array_size, ptcl_Nx, ptcl_Ny, ptcl_Nt, ptcl_Nmu, ptcl_N_phi,
+    current_time, dt
+):
+    """
+    Generate new scattered particles based on scattered energy tallies.
+
+    Returns
+    -------
+    scattered_particles : ndarray
+        Array of scattered particle properties [time, iz, ir, z, r, mu, phi, frq, nrg, startnrg].
+    n_scattered_particles : int
+        Number of scattered particles generated.
+    """
+    # print(f'sum of nrgscattered = {np.sum(nrgscattered)}')
+    nz_cells = len(mesh_z_edges) - 1
+    nr_cells = len(mesh_r_edges) - 1
+
+    # Allocate scattered particle array
+    scattered_particles = np.zeros((ptcl_max_array_size, 10), dtype=np.float64)
+    n_scattered_particles = 0
+
+    # Loop over cells
+    for iz in range(nz_cells):
+        for ir in range(nr_cells):
+
+            if nrgscattered[iz, ir] <= 0.0:
+                continue  # no energy to scatter
+
+            # Space, angle, and time grids
+            z_values = imc_source.deterministic_sample_z(mesh_z_edges[iz], mesh_z_edges[iz+1], ptcl_Nx[iz,ir])
+            r_values, r_weights = imc_source.weighted_sample_radius(mesh_r_edges[ir], mesh_r_edges[ir+1], ptcl_Ny[iz,ir])
+            mu_values = imc_source.deterministic_sample_mu_isotropic(ptcl_Nmu[iz,ir])
+            phi_values = imc_source.deterministic_sample_phi_isotropic(ptcl_N_phi[iz,ir])
+            t_values = current_time + (np.arange(ptcl_Nt[iz, ir]) + 0.5) * dt / ptcl_Nt[iz, ir]
+
+            n_source_ptcls = len(z_values) * len(r_values) * len(mu_values) * len(phi_values) * len(t_values)
+
+            nrg = nrgscattered[iz, ir] / n_source_ptcls
+
+            # Create scattered particles
+            for z in z_values:
+                for i_r, r in enumerate(r_values):
+                    w_r = r_weights[i_r]
+                    for mu in mu_values:
+                        for phi in phi_values:
+                            for ttt in t_values:
+                                if n_scattered_particles >= ptcl_max_array_size:
+                                    raise RuntimeError("Maximum number of scattered particles reached")
+
+                                idx = n_scattered_particles
+                                scattered_particles[idx, 0] = ttt   # emission time
+                                scattered_particles[idx, 1] = iz    # z cell index
+                                scattered_particles[idx, 2] = ir    # r cell index
+                                scattered_particles[idx, 3] = z     # z position
+                                scattered_particles[idx, 4] = r     # r position
+                                scattered_particles[idx, 5] = mu    # mu
+                                scattered_particles[idx, 6] = phi   # phi
+                                scattered_particles[idx, 7] = 0     # frequency (placeholder)
+                                scattered_particles[idx, 8] = nrg   # particle energy
+                                scattered_particles[idx, 9] = nrg   # starnrg
+
+                                n_scattered_particles += 1
     
     # print(f'Sum of generated particles energies = {np.sum(scattered_particles[:, 8])}')
     return scattered_particles, n_scattered_particles

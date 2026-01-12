@@ -6,7 +6,7 @@ Nx              2
 Ny              2
 Nmu             8
 Nomega          8
-Nt              5
+Nt              10
 surface_Ny      5
 surface_Nmu     8
 n_max           10000000

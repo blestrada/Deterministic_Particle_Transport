@@ -722,7 +722,7 @@ def crooked_pipe(output_file):
     print(f'thin_density = {thin_density} g/cc')
     print(f'thick_density = {thick_density} g/cc')
     thin_mass_opacity = 20.0 #[cm^2/g]
-    thick_mass_opacity = 20.0 # [cm^2/g]
+    thick_mass_opacity = 200.0 # [cm^2/g]
 
     thin_opacity = thin_mass_opacity * thin_density # [1/cm]
     print(f'thin_opacity = {thin_opacity} [1/cm]')
@@ -892,7 +892,7 @@ def crooked_pipe(output_file):
 
                         while not converged and iterations < max_iter:
                             # Generate scattered particles
-                            scattered_particles, n_scattered_particles = imc_track.generate_scattered_particles(
+                            scattered_particles, n_scattered_particles = imc_track.generate_scattered_particles_no_distribution(
                                 nrgscattered, x_Es, y_Es, tEs,
                                 mesh.x_edges, mesh.y_edges, mesh.dx, mesh.dy,
                                 part.max_array_size, part.Nx, part.Ny, part.Nt, part.Nmu, part.N_omega,
