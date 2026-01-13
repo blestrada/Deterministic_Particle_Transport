@@ -1487,7 +1487,8 @@ def generate_scattered_particles_no_distribution(
     n_scattered_particles : int
         Number of scattered particles generated.
     """
-    # print(f'sum of nrgscattered = {np.sum(nrgscattered)}')
+    # with objmode:
+    #     print(f'sum of nrgscattered = {np.sum(nrgscattered)}')
     nz_cells = len(mesh_z_edges) - 1
     nr_cells = len(mesh_r_edges) - 1
 
@@ -1507,22 +1508,22 @@ def generate_scattered_particles_no_distribution(
             r_values, r_weights = imc_source.weighted_sample_radius(mesh_r_edges[ir], mesh_r_edges[ir+1], ptcl_Ny[iz,ir])
             mu_values = imc_source.deterministic_sample_mu_isotropic(ptcl_Nmu[iz,ir])
             phi_values = imc_source.deterministic_sample_phi_isotropic(ptcl_N_phi[iz,ir])
-            t_values = current_time + (np.arange(ptcl_Nt[iz, ir]) + 0.5) * dt / ptcl_Nt[iz, ir]
+            t_values, t_weights = imc_source.deterministic_sample_t_tanh_dist(ptcl_Nt[iz,ir], 2.0, current_time, current_time + dt)
 
-            n_source_ptcls = len(z_values) * len(r_values) * len(mu_values) * len(phi_values) * len(t_values)
+            n_cell_ptcls = len(z_values) * len(r_values) * len(mu_values) * len(phi_values) * len(t_values)
 
-            nrg = nrgscattered[iz, ir] / n_source_ptcls
+
+            base_nrg = nrgscattered[iz, ir] / n_cell_ptcls
 
             # Create scattered particles
             for z in z_values:
                 for i_r, r in enumerate(r_values):
-                    w_r = r_weights[i_r]
                     for mu in mu_values:
                         for phi in phi_values:
-                            for ttt in t_values:
+                            for i_t, ttt in enumerate(t_values):
                                 if n_scattered_particles >= ptcl_max_array_size:
                                     raise RuntimeError("Maximum number of scattered particles reached")
-
+                                weighted_nrg = base_nrg * r_weights[i_r] * t_weights[i_t]
                                 idx = n_scattered_particles
                                 scattered_particles[idx, 0] = ttt   # emission time
                                 scattered_particles[idx, 1] = iz    # z cell index
@@ -1532,12 +1533,12 @@ def generate_scattered_particles_no_distribution(
                                 scattered_particles[idx, 5] = mu    # mu
                                 scattered_particles[idx, 6] = phi   # phi
                                 scattered_particles[idx, 7] = 0     # frequency (placeholder)
-                                scattered_particles[idx, 8] = nrg   # particle energy
-                                scattered_particles[idx, 9] = nrg   # starnrg
+                                scattered_particles[idx, 8] = weighted_nrg   # particle energy
+                                scattered_particles[idx, 9] = weighted_nrg   # starnrg
 
                                 n_scattered_particles += 1
-    
-    # print(f'Sum of generated particles energies = {np.sum(scattered_particles[:, 8])}')
+    # with objmode:
+    #     print(f'Sum of generated particles energies = {np.sum(scattered_particles[:, 8])}')
     return scattered_particles, n_scattered_particles
 
 @njit

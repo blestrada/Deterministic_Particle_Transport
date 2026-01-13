@@ -1,47 +1,53 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-Nx = 15
-Nmu = 15
+Nx, Ny, Nmu = 6, 6, 4
+num_particles = Nx * Ny * Nmu
 
-# Monte Carlo
-num_particles = Nx * Nmu
-mc_x_positions = np.zeros(num_particles, dtype=np.float64)
-mc_angles = np.zeros(num_particles, dtype=np.float64)
-for i in range(num_particles):
-    mc_x_positions[i] = np.random.uniform()
-    mc_angles[i] = np.random.uniform(-1.0,1.0)
+# --- Monte Carlo ---
+mc_x = np.random.uniform(0, 1, num_particles)
+mc_y = np.random.uniform(0, 1, num_particles)
+mc_angles = np.random.uniform(0, 2*np.pi, num_particles)
 
-# DPT
-dpt_x_positions = (np.arange(Nx) + 0.5) / Nx
-dpt_angles =  -1.0 + (np.arange(Nmu) + 0.5) * 2 / Nmu
-dpt_particles = np.array([(x, mu) for x in dpt_x_positions for mu in dpt_angles])
+# Calculate MC vector components
+mc_u = np.cos(mc_angles)
+mc_v = np.sin(mc_angles)
 
-        
-# Extract x and mu values for plotting
-x_values = dpt_particles[:, 0]
-mu_values = dpt_particles[:, 1]
+# --- DPT (Deterministic) ---
+dpt_x_coords = (np.arange(Nx) + 0.5) / Nx
+dpt_y_coords = (np.arange(Ny) + 0.5) / Ny
+dpt_angle_coords = (np.arange(Nmu) + 0.5) * 2*np.pi / Nmu
 
-# Create figure with two subplots
-fig, axes = plt.subplots(1, 2, figsize=(12, 5))  # 1 row, 2 columns
+# Creating the full list of particles from the grid
+dpt_particles = np.array([(x, y, mu) for x in dpt_x_coords for y in dpt_y_coords for mu in dpt_angle_coords])
 
-# Monte Carlo Sampling Plot
-axes[0].set_title('Monte Carlo Sampling in 2D')
-axes[0].set_xlabel('x')
-axes[0].set_ylabel(r'$\mu$')
-axes[0].set_xlim(0, 1)
-axes[0].set_ylim(-1, 1)
-axes[0].plot(mc_x_positions, mc_angles, '.', label='MC', color='r')
+dpt_x = dpt_particles[:, 0]
+dpt_y = dpt_particles[:, 1]
+dpt_angles = dpt_particles[:, 2]
 
-# Deterministic Sampling Plot
-axes[1].set_title('Deterministic Sampling in 2D')
-axes[1].set_xlabel('x')
-axes[1].set_ylabel(r'$\mu$')
-axes[1].set_xlim(0, 1.0)
-axes[1].set_ylim(-1.0, 1.0)
-axes[1].plot(x_values, mu_values, '.', label='DPT', color='b')
+# Calculate DPT vector components
+dpt_u = np.cos(dpt_angles)
+dpt_v = np.sin(dpt_angles)
 
-# Adjust layout and show the figure
+# --- Plotting ---
+fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+# Monte Carlo Plot
+# 'pivot=middle' ensures the arrow rotates around the (x,y) point
+axes[0].quiver(mc_x, mc_y, mc_u, mc_v, color='red', alpha=0.5, pivot='tail', scale=30)
+axes[0].set_title(f'Random Sampling')
+
+# Deterministic Plot
+axes[1].quiver(dpt_x, dpt_y, dpt_u, dpt_v, color='blue', alpha=0.5, pivot='tail', scale=30)
+axes[1].set_title(f'Deterministic Sampling')
+
+for ax in axes:
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect('equal')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+
 plt.tight_layout()
-plt.savefig('MC vs DPT Sampling in 2D.png',dpi=900)
-plt.close()
+plt.savefig('MC_vs_DPT_Quiver.png', dpi=900)
+plt.show()

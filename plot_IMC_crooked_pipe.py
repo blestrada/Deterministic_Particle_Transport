@@ -6,13 +6,13 @@ import matplotlib.animation as animation
 
 # Load your CSV
 # df = pd.read_csv("output_DPT_nx2_ny2_nt10_nmu2_nphi16.csv")
-df = pd.read_csv('temperature_history_dpt2.csv')
+df = pd.read_csv('temperature_history_IMC1e6_sigma2000_ts0.5.csv')
 # df = pd.read_csv("temperature_history_IMC_1e6.csv")
 # df_imc = pd.read_csv("temperature_history_ts0.3_sigma2000_imc.csv")
-df_imc = pd.read_csv("temperature_history.csv")
+df_imc = pd.read_csv("temperature_history_IMC1e6_sigma2000_ts0.5.csv")
 # df_imc = pd.read_csv("temperature_history_IMC_2e6.csv")
-df_imc = pd.read_csv('temperature_history_nr2_nz_2_nmu8_nomega8_Nt5.csv')
-surface_temp=0.3
+# df_imc = pd.read_csv('temperature_history_nr2_nz_2_nmu8_nomega8_Nt5.csv')
+surface_temp=0.5
 # Define the indices of interest
 point_1_indices = [
     (0,0), (0,1), (0,2), (0, 3), (0, 4),
@@ -161,7 +161,8 @@ plt.xlim(x_edges[0], x_edges[-1])
 plt.ylim(0,2)
 plt.axis('scaled')
 plt.title(f"Temperature at t={final_time}")
-plt.tight_layout
+plt.tight_layout()
+plt.savefig('mattemp.png', dpi=900)
 plt.show()
 
 plt.figure()
@@ -178,7 +179,8 @@ plt.xlim(x_edges[0], x_edges[-1])
 plt.ylim(0,2)
 plt.axis('scaled')
 plt.title(f"Radiation Temperature at t={final_time}")
-plt.tight_layout
+plt.tight_layout()
+plt.savefig('radtemp.png',dpi=900)
 plt.show()
 
 
@@ -354,6 +356,8 @@ plt.xlim(1e-3, 100.0)
 plt.ylim(0.0, surface_temp)
 plt.legend()
 plt.grid(True, which="both", ls="--", alpha=0.5)
+plt.tight_layout()
+plt.savefig('fiducial_points.png',dpi=900)
 plt.show()
 
 plot_thermal_energy = False

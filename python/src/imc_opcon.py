@@ -722,7 +722,7 @@ def crooked_pipe(output_file):
     print(f'thin_density = {thin_density} g/cc')
     print(f'thick_density = {thick_density} g/cc')
     thin_mass_opacity = 20.0 #[cm^2/g]
-    thick_mass_opacity = 200.0 # [cm^2/g]
+    thick_mass_opacity = 20.0 # [cm^2/g]
 
     thin_opacity = thin_mass_opacity * thin_density # [1/cm]
     print(f'thin_opacity = {thin_opacity} [1/cm]')
@@ -850,11 +850,12 @@ def crooked_pipe(output_file):
                 mesh.fleck = imc_update.crooked_pipe_update(mesh.sigma_a, mesh.temp, time.dt)
                 
                 if part.mode == 'nrn':
-                    part.n_particles, part.particle_prop = imc_source.crooked_pipe_surface_particles(part.n_particles, part.particle_prop, 
+                    part.n_particles, part.particle_prop = imc_source.crooked_pipe_surface_particles(bcon.T0, part.n_particles, part.particle_prop, 
                                                                                                      part.surface_Ny, part.surface_Nmu, 
                                                                                                      part.surface_N_omega, part.surface_Nt, 
                                                                                                      time.time, time.dt, mesh.y_edges)
-                    part.n_particles, part.particle_prop = imc_source.crooked_pipe_body_particles(part.n_particles, part.particle_prop, 
+                    part.n_particles, part.particle_prop = imc_source.crooked_pipe_body_particles(part.n_particles, part.particle_prop,
+                                                                                                  part.Nx, part.Ny, part.Nmu, part.N_omega, part.Nt, 
                                                                                                   time.time, time.dt, 
                                                                                                   mesh.y_edges, mesh.x_edges, 
                                                                                                   mesh.temp, mesh.fleck, 

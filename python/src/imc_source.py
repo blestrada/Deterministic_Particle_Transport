@@ -85,6 +85,8 @@ def weighted_sample_radius(r_min: float,
     # Weight = (2 * r * dr) / (dr * (r_max + r_min)) effectively
     # Simplified weight:
     weights = (2 * r_values * (r_max - r_min)) / area_norm
+
+    weights = weights / np.mean(weights)
     
     return r_values, weights
 
@@ -146,7 +148,7 @@ def deterministic_sample_t_tanh_dist(n_samples,
     
     # 4. Normalize weights so their sum equals n_samples
     # This ensures the 'total energy' is conserved
-    weights /= np.sum(weights)
+    weights = weights / np.mean(weights)
     
     return t_values, weights
 
@@ -1026,36 +1028,35 @@ def run2D(fleck, temp, sigma_a, particle_prop, n_particles, current_time, dt, me
 
     return n_particles, particle_prop
 
-
-def crooked_pipe_surface_particles(n_particles, particle_prop, 
+@njit
+def crooked_pipe_surface_particles(T_surf, n_particles, particle_prop, 
                                    surface_Nr, surface_Nmu, 
                                    surface_N_phi, surface_Nt, 
                                    current_time, dt, mesh_r_edges):
     """Creates surface source particles for the boundary condition"""
-    T_surf = bcon.T0  # keV
     surface_length = 0.5 # cm
     e_surf = phys.sb * T_surf ** 4 * dt * (np.pi * surface_length**2)
-    print(f'Total energy emitted by the surface = {e_surf}')
+    print('Total energy emitted by the surface =', e_surf)
 
     # Generate radii
     # r_values = deterministic_sample_radius(0.0, 0.5, surface_Nr)
     r_values, r_weights = weighted_sample_radius(0.0, 0.5, surface_Nr)
-    print(f'r_values = {r_values}')
+    # print(f'r_values = {r_values}')
 
     # Generate mu
     mu_values = deterministic_sample_mu_lambertian(surface_Nmu)
-    print(f'mu_values = {mu_values}')
+    # print(f'mu_values = {mu_values}')
 
     # Generate Phi
     phi_values = deterministic_sample_phi_isotropic(surface_N_phi)
-    print(f'phi_values = {phi_values}')
+    # print(f'phi_values = {phi_values}')
 
     # Emission times evenly spaced over dt
     t_values = current_time + (np.arange(surface_Nt) + 0.5) * dt / surface_Nt
 
     # Total number of source particles
     n_source_ptcls = len(r_values) * len(mu_values) * len(phi_values) * len(t_values)
-    print(f'Number of surface source particles = {n_source_ptcls}')
+    # print(f'Number of surface source particles = {n_source_ptcls}')
 
     # Energy per particle
     base_nrg = e_surf / n_source_ptcls
@@ -1064,9 +1065,7 @@ def crooked_pipe_surface_particles(n_particles, particle_prop,
     z_idx = 0
 
     for i, r in enumerate(r_values):
-        r_idx = np.searchsorted(mesh_r_edges, r) - 1
-        
-        # This is the "Corrected Energy" for all particles at this radius
+        r_idx = np.searchsorted(mesh_r_edges, r) - 1        
         weighted_nrg = base_nrg * r_weights[i]
         for mu in mu_values:
             for phi in phi_values:
@@ -1082,8 +1081,9 @@ def crooked_pipe_surface_particles(n_particles, particle_prop,
 
     return n_particles, particle_prop
 
-
+@njit
 def crooked_pipe_body_particles(n_particles, particle_prop, 
+                                part_Nx, part_Ny, part_Nmu, part_Nphi, part_Nt,
                                 current_time, dt, 
                                 mesh_r_edges, mesh_z_edges, 
                                 mesh_temp, mesh_fleck, 
@@ -1106,32 +1106,32 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
             # Generate z
             z_min = mesh_z_edges[iz]
             z_max = mesh_z_edges[iz+1]
-            z_samples = part.Nx[iz, ir]
+            z_samples = part_Nx[iz, ir]
             z_values = deterministic_sample_z(z_min, z_max, z_samples)
 
             # Generate r
             r_min = mesh_r_edges[ir]
             r_max = mesh_r_edges[ir+1]
-            r_samples = part.Ny[iz, ir]
+            r_samples = part_Ny[iz, ir]
             # r_values = deterministic_sample_radius(r_min, r_max, r_samples)
             r_values, r_weights = weighted_sample_radius(r_min, r_max, r_samples)
 
             # Generate mu
-            mu_samples = part.Nmu[iz, ir]
+            mu_samples = part_Nmu[iz, ir]
             mu_values = deterministic_sample_mu_isotropic(mu_samples)
 
             # Generate phi
-            phi_samples = part.N_omega[iz, ir]
+            phi_samples = part_Nphi[iz, ir]
             phi_values = deterministic_sample_phi_isotropic(phi_samples)
             
             # Generate t
-            t_samples = part.Nt[iz, ir]
+            t_samples = part_Nt[iz, ir]
             t_min = current_time
             t_max = current_time + dt
-            t_values, t_weights = deterministic_sample_t_tanh_dist(t_samples, alpha=1.0, t_min, t_max)
+            t_values, t_weights = deterministic_sample_t_tanh_dist(t_samples, 2.0, t_min, t_max)
 
             # The total number of source particle in the cell
-            n_source_ptcls = len(z_values) * len(r_values) * len(mu_values) * len(phi_values) * len(t_values)
+            n_cell_ptcls = len(z_values) * len(r_values) * len(mu_values) * len(phi_values) * len(t_values)
 
             # Total energy emitted by the cell
             e_cell = (
@@ -1143,7 +1143,7 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
             zone_volume * 
             dt)
             
-            base_nrg = e_cell / n_source_ptcls
+            base_nrg = e_cell / n_cell_ptcls
 
             # Loop to create particles
             for z in z_values:
@@ -1158,15 +1158,11 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
                                     n_particles += 1
                                 else:
                                     print("Warning: Maximum number of particles reached!")
-    print(f"Added {n_particles - start_count} body-source particles.")
+    actual_sum = np.sum(particle_prop[start_count:n_particles, 8])
+    theoretical_sum = np.sum(mesh_fleck * mesh_sigma_a * phys.a * phys.c * mesh_temp**4 * volumes * dt)
     
-    e_body = (
-        mesh_fleck
-        * mesh_sigma_a
-        * phys.a
-        * phys.c
-        * mesh_temp ** 4
-        * volumes
-        * dt)
-    print(f'Total energy emitted by body-source = {np.sum(e_body)}')
+    print("Added", n_particles - start_count, "body-source particles.")    
+    print("Sum of generated particles energies =", actual_sum)
+    print("Total energy emitted by body-source =", theoretical_sum)
+    
     return n_particles, particle_prop
