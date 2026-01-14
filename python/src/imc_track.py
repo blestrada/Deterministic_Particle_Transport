@@ -1510,7 +1510,7 @@ def generate_scattered_particles_no_distribution(
             r_values, r_weights = imc_source.weighted_sample_radius(mesh_r_edges[ir], mesh_r_edges[ir+1], ptcl_Ny[iz,ir])
             mu_values = imc_source.deterministic_sample_mu_isotropic(ptcl_Nmu[iz,ir])
             phi_values = imc_source.deterministic_sample_phi_isotropic(ptcl_N_phi[iz,ir])
-            t_values, t_weights = imc_source.deterministic_sample_t_tanh_dist(ptcl_Nt[iz,ir], 2.0, current_time, current_time + dt)
+            t_values, t_weights = imc_source.deterministic_sample_t_tanh_dist(ptcl_Nt[iz,ir], 4.0, current_time, current_time + dt)
 
             n_cell_ptcls = len(z_values) * len(r_values) * len(mu_values) * len(phi_values) * len(t_values)
 

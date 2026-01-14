@@ -888,7 +888,7 @@ def crooked_pipe(output_file):
                         # Step 2: Implicit scattering loop
                         epsilon = 1e-3
                         iterations = 0
-                        max_iter = 1000  # Safety cap to prevent infinite loops
+                        max_iter = 10000  # Safety cap to prevent infinite loops
                         converged = False
 
                         prev_nrgscattered = np.copy(original_nrg_scattered)

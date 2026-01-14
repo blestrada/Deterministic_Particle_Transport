@@ -1128,7 +1128,7 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
             t_samples = part_Nt[iz, ir]
             t_min = current_time
             t_max = current_time + dt
-            t_values, t_weights = deterministic_sample_t_tanh_dist(t_samples, 2.0, t_min, t_max)
+            t_values, t_weights = deterministic_sample_t_tanh_dist(t_samples, 4.0, t_min, t_max)
 
             # The total number of source particle in the cell
             n_cell_ptcls = len(z_values) * len(r_values) * len(mu_values) * len(phi_values) * len(t_values)
