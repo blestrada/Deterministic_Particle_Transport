@@ -722,7 +722,7 @@ def crooked_pipe(output_file):
     print(f'thin_density = {thin_density} g/cc')
     print(f'thick_density = {thick_density} g/cc')
     thin_mass_opacity = 20.0 #[cm^2/g]
-    thick_mass_opacity = 20.0 # [cm^2/g]
+    thick_mass_opacity = 200.0 # [cm^2/g]
 
     thin_opacity = thin_mass_opacity * thin_density # [1/cm]
     print(f'thin_opacity = {thin_opacity} [1/cm]')
@@ -804,13 +804,13 @@ def crooked_pipe(output_file):
     time.time = 0.0
     time.dt = 0.001    # shakes
     time.dt_max = 1.0  # shakes
-    t_final = 100.0
+    t_final = 1.0
     time.dt_rampfactor = 1.1
     part.surface_Nmu = 16
     part.surface_N_omega = 16
     part.surface_Ny = 20
     part.surface_Nt = 20
-    bcon.T0 = 0.3 # keV
+    bcon.T0 = 0.5 # keV
     parallel = True
 
     # RZ Volume Verification
@@ -907,7 +907,8 @@ def crooked_pipe(output_file):
                                 mesh.sigma_a, mesh.sigma_s, mesh.sigma_t,
                                 mesh.fleck, mesh.x_edges, mesh.y_edges
                             )
-
+                            # Clean scattered particles array
+                            n_scattered_particles, scattered_particles = imc_track.clean2D(n_scattered_particles, scattered_particles, energy_col=int(8))
                             # --- L2 Norm Calculation ---
                             # 1. Calculate the difference per cell
                             diff = nrgscattered - prev_nrgscattered

@@ -1493,7 +1493,7 @@ def generate_scattered_particles_no_distribution(
     nr_cells = len(mesh_r_edges) - 1
 
     # Allocate scattered particle array
-    scattered_particles = np.zeros((ptcl_max_array_size, 10), dtype=np.float64)
+    scattered_particles = np.zeros((50_000_000, 10), dtype=np.float64)
     n_scattered_particles = 0
 
     # Loop over cells
@@ -1540,6 +1540,7 @@ def generate_scattered_particles_no_distribution(
     # with objmode:
     #     print(f'Sum of generated particles energies = {np.sum(scattered_particles[:, 8])}')
     return scattered_particles, n_scattered_particles
+
 
 @njit
 def track_single_particle_RN(iptcl, particle_prop, mesh_z_edges, mesh_r_edges,

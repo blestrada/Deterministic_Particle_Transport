@@ -6,9 +6,8 @@ import matplotlib.animation as animation
 
 # Load your CSV
 # df = pd.read_csv("output_DPT_nx2_ny2_nt10_nmu2_nphi16.csv")
-df = pd.read_csv('temperature_history_IMC1e6_sigma2000_ts0.5.csv')
+df = pd.read_csv('temperature_history.csv')
 # df = pd.read_csv("temperature_history_IMC_1e6.csv")
-# df_imc = pd.read_csv("temperature_history_ts0.3_sigma2000_imc.csv")
 df_imc = pd.read_csv("temperature_history_IMC1e6_sigma2000_ts0.5.csv")
 # df_imc = pd.read_csv("temperature_history_IMC_2e6.csv")
 # df_imc = pd.read_csv('temperature_history_nr2_nz_2_nmu8_nomega8_Nt5.csv')
