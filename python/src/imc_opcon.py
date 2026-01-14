@@ -8,7 +8,7 @@ import time as tm
 import pandas as pd
 import numba
 import platform
-
+from numba import set_num_threads, get_num_threads
 import imc_update
 import imc_source
 import imc_tally
@@ -21,6 +21,7 @@ import imc_global_time_data as time
 import imc_global_mat_data as mat
 import imc_global_part_data as part
 import imc_global_volsource_data as vol
+import imc_global_thread_data as threads
 import imc_utilities as imc_util
 
 
@@ -795,7 +796,7 @@ def crooked_pipe(output_file):
 
     print(f'mat.b = {mat.b}')
     # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
-    part.max_array_size = 500_000_000
+    part.max_array_size = 600_000_000
     part.particle_prop = np.zeros((part.max_array_size, 10), dtype=np.float64)
     part.n_particles = 0
 
@@ -825,18 +826,19 @@ def crooked_pipe(output_file):
     # Source Density Check
     total_vol = np.sum(vols[:, mesh.y_edges[:-1] < 0.5])
     print(f"Total volume of source region: {total_vol}")
-    # Get the total number of threads available
-    n_all = numba.get_num_threads()
 
-    # Check the operating system
-    if platform.system() == "Linux":
-        # If the OS is Linux, use half the available threads
-        numba.set_num_threads(max(1, n_all // 2))
-        print("Numba will use", numba.get_num_threads(), "threads on Linux.")
-    else:
-        # If the OS is not Linux (e.g., macOS), use all threads
-        numba.set_num_threads(n_all)
-        print("Numba will use", numba.get_num_threads(), "threads on macOS or other OS.")
+    # Set the desired number of threads
+    set_num_threads(threads.n_threads)
+
+    # Get the actual number of threads Numba will use
+    actual_threads = get_num_threads()
+
+    print(f"Requested threads: {threads.n_threads}")
+    print(f"Numba will use:     {actual_threads} threads")
+
+    # the maximum physical threads available on the system:
+    print(f"System max threads: {numba.config.NUMBA_DEFAULT_NUM_THREADS}")
+
     # Loop over timesteps
     records = []
     try:
@@ -974,7 +976,7 @@ def crooked_pipe(output_file):
 
                 # Clean up particles that had their energy set to -1.0
                 part.n_particles, part.particle_prop = imc_track.clean2D(part.n_particles, part.particle_prop)
-                
+                print(f'Number of particle at end of step = {part.n_particles}')
                 # # Check for energies
                 # negative_energy_indices = np.where(part.particle_prop[:part.n_particles, 8] < 0.0)[0]
                 # if negative_energy_indices.size > 0:

@@ -1,7 +1,7 @@
 """Advance particles over a time-step"""
 
 import numpy as np
-from numba import njit, jit, objmode, prange, get_num_threads
+from numba import njit, jit, objmode, prange, get_num_threads, config
 from scipy.optimize import root
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
@@ -1241,11 +1241,11 @@ def track_single_particle(
 
         # Energy cutoff echeck
         # Kill particle if nrg < 0.01 * startnrg
-        # if nrg < 0.01 * startnrg:
-        #     priv_dep[tid, z_cell_idx, r_cell_idx] += nrg  # Deposit remaining energy
-        #     particle_prop[iptcl, 8] = -1.0               # Mark as dead
-        #     history_continues = False
-        #     continue # Exit loop for this particle
+        if nrg < 0.01 * startnrg:
+            priv_dep[tid, z_cell_idx, r_cell_idx] += nrg  # Deposit remaining energy
+            particle_prop[iptcl, 8] = -1.0               # Mark as dead
+            history_continues = False
+            continue # Exit loop for this particle
 
         # Event Handling
         if event == 0:
@@ -1287,6 +1287,8 @@ def run_crooked_pipe_firstloop(n_particles, particle_prop, current_time, dt,
     num_z_cells = len(mesh_z_edges) - 1
     num_r_cells = len(mesh_r_edges) - 1
 
+    n_threads = config.NUMBA_NUM_THREADS
+
     # Global tallies
     nrgdep = np.zeros((num_z_cells, num_r_cells), dtype=np.float64)
     nrgscattered = np.zeros((num_z_cells, num_r_cells), dtype=np.float64)
@@ -1295,7 +1297,6 @@ def run_crooked_pipe_firstloop(n_particles, particle_prop, current_time, dt,
     tEs = np.zeros((num_z_cells, num_r_cells), dtype=np.float64)
 
     # Private tallies for each thread
-    n_threads = numba.get_num_threads()
     priv_dep = np.zeros((n_threads, num_z_cells, num_r_cells), dtype=np.float64)
     priv_scat = np.zeros((n_threads, num_z_cells, num_r_cells), dtype=np.float64)
     priv_xEs = np.zeros((n_threads, num_z_cells, num_r_cells), dtype=np.float64)
@@ -1493,7 +1494,8 @@ def generate_scattered_particles_no_distribution(
     nr_cells = len(mesh_r_edges) - 1
 
     # Allocate scattered particle array
-    scattered_particles = np.zeros((50_000_000, 10), dtype=np.float64)
+    max_size = np.sum(ptcl_Nx * ptcl_Ny * ptcl_Nmu * ptcl_Nt * ptcl_N_phi)
+    scattered_particles = np.zeros((int(max_size), 10), dtype=np.float64)
     n_scattered_particles = 0
 
     # Loop over cells
@@ -1751,8 +1753,8 @@ def clean2D(n_particles, particle_prop, energy_col=8):
     n_particles = valid_index
 
     # Debug print (Numba-safe)
-    print("Number of particles removed =", n_to_remove)
-    print("Number of particles remaining =", n_particles)
+    # print("Number of particles removed =", n_to_remove)
+    # print("Number of particles remaining =", n_particles)
 
     return n_particles, particle_prop
 

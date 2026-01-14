@@ -9,6 +9,7 @@ import imc_global_part_data as part
 import imc_global_phys_data as phys
 import imc_global_time_data as time
 import imc_global_volsource_data as vol
+import imc_global_thread_data as threads
 
 def read(input_file):
     """
@@ -126,6 +127,9 @@ def read(input_file):
 
             elif keyw == 'nomega':
                 part.N_omega = int(keyv)
+
+            elif keyw == 'n_threads':
+                threads.n_threads = int(keyv)
             else:
                 continue
 
