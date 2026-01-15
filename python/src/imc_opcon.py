@@ -796,7 +796,7 @@ def crooked_pipe(output_file):
 
     print(f'mat.b = {mat.b}')
     # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
-    part.max_array_size = 600_000_000
+    part.max_array_size = 700_000_000
     part.particle_prop = np.zeros((part.max_array_size, 10), dtype=np.float64)
     part.n_particles = 0
 
@@ -804,7 +804,7 @@ def crooked_pipe(output_file):
     # Set start time and time-step
     time.time = 0.0
     time.dt = 0.001    # shakes
-    time.dt_max = 0.01  # shakes
+    time.dt_max = 1.0  # shakes
     t_final = 1.0
     time.dt_rampfactor = 1.1
     part.surface_Nmu = 16
