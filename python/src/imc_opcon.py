@@ -883,15 +883,12 @@ def crooked_pipe(output_file):
                             mesh.sigma_a, mesh.sigma_s, mesh.sigma_t,
                             mesh.fleck, mesh.x_edges, mesh.y_edges
                         )
+                        # This is our 0th iteration baseline
                         original_nrg_scattered = np.copy(nrgscattered)
-                        # print(f'original sum of nrg_scattered = {np.sum(original_nrg_scattered)}')
-                        # Step 2: Implicit scattering loop
-                        epsilon = 1e-3
+                        
                         iterations = 0
-                        max_iter = 10000  # Safety cap to prevent infinite loops
+                        max_iter = 10000  
                         converged = False
-
-                        prev_nrgscattered = np.copy(original_nrg_scattered)
 
                         while not converged and iterations < max_iter:
                             # Generate scattered particles
@@ -909,54 +906,42 @@ def crooked_pipe(output_file):
                                 mesh.sigma_a, mesh.sigma_s, mesh.sigma_t,
                                 mesh.fleck, mesh.x_edges, mesh.y_edges
                             )
+                            
                             # Clean scattered particles array
                             n_scattered_particles, scattered_particles = imc_track.clean2D(n_scattered_particles, scattered_particles, energy_col=int(8))
-                            # --- L2 Norm Calculation ---
-                            # 1. Calculate the difference per cell
-                            diff = nrgscattered - prev_nrgscattered
-                            
-                            # 2. Calculate the L2 norm of the difference
-                            # np.linalg.norm(diff) is equivalent to sqrt(sum(diff**2))
-                            l2_diff = np.linalg.norm(diff)
-                            
-                            # 3. Normalize by the norm of the total energy to get relative change
-                            # Adding a tiny 1e-12 to prevent division by zero
-                            rel_l2_error = l2_diff / (np.linalg.norm(prev_nrgscattered) + 1e-12)
-                            if rel_l2_error < epsilon:
-                                converged = True
-                            # Update for next iteration comparison
-                            prev_nrgscattered = np.copy(nrgscattered)
 
-                            # print(f' In iteration {iterations}, nrgdep due to scattered = {nrgdep_scat}')
-                            # print(f'Sum of nrgscatted iteration {iterations} = {np.sum(nrgscattered)}')
+                            # --- Per-Cell Convergence Check (2% of 0th Iteration) ---
+                            # We check if the remaining energy in EVERY cell is < 2% of that cell's original energy.
+                            # We use np.all() to ensure every single cell meets the condition.
+                            # 1e-12 is added to the denominator to prevent division by zero in non-scattering cells.
+                            
+                            relative_ratios = nrgscattered / (original_nrg_scattered + 1e-12)
+                            max_rel_error = np.max(relative_ratios)
+
+                            if max_rel_error < 0.01:
+                                converged = True
+
                             # Add scattered particle deposition to the mesh
                             mesh.nrgdep += nrgdep_scat
 
-                            # Clean scattered particles
-                            #n_scattered_particles, scattered_particles = imc_track.clean2D(n_scattered_particles, scattered_particles)
                             # Copy scattered particles into global array
                             n_existing_particles = part.n_particles
                             n_total_particles = n_existing_particles + n_scattered_particles
                             if n_total_particles > part.max_array_size:
-                                print(f'iteration {iterations}')
-                                raise ValueError("Not enough space in global array for scattered particles in iteration ")
+                                raise ValueError(f"Not enough space in global array at iteration {iterations}")
 
                             part.particle_prop[n_existing_particles:n_total_particles, :] = scattered_particles[:n_scattered_particles, :]
                             part.n_particles = n_total_particles
-
-                            # # Check convergence
-                            # rel_remaining = np.sum(nrgscattered) / np.sum(original_nrg_scattered)
-                            # if rel_remaining < epsilon:
-                            #     converged = True
                         
                             iterations += 1
+
                         # After converging, dump remaining scattered energy
                         mesh.nrgdep += nrgscattered
-                        print(f'Number of scattering iterations = {iterations}')
+                        
                         if converged:
-                            print(f'Converged in {iterations} iterations.')
+                            print(f'Converged in {iterations} iterations (Max cell error: {max_rel_error:.2%})')
                         else:
-                            print(f'Reached max_iter ({max_iter}) without full convergence. Final error: {rel_l2_error:.2e}') 
+                            print(f'Reached max_iter ({max_iter}). Final max error: {max_rel_error:.2%}')
                     else:
                         mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run_crooked_pipe(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mesh.thin_cells, part.Nmu)
                     
