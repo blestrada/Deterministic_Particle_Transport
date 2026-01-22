@@ -783,11 +783,11 @@ def crooked_pipe(output_file):
     print(f'mesh.thin_cells = {mesh.thin_cells}')
 
     # Allocate more emission points to the thick cells
-    part.Nx[mesh.thick_cells] = 2
-    part.Ny[mesh.thick_cells] = 2
-    part.Nt[mesh.thick_cells] = 4
-    part.N_omega[mesh.thick_cells] = 8
-    part.Nmu[mesh.thick_cells] = 4
+    # part.Nx[mesh.thick_cells] = 2
+    # part.Ny[mesh.thick_cells] = 2
+    # part.Nt[mesh.thick_cells] = 4
+    # part.N_omega[mesh.thick_cells] = 8
+    # part.Nmu[mesh.thick_cells] = 4
 
     mesh.sigma_s = np.full((num_x_idx, num_y_idx), 0.0)
     mesh.sigma_t = np.copy(mesh.sigma_a)
