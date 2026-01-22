@@ -782,6 +782,13 @@ def crooked_pipe(output_file):
     print(f'mesh.thick_cells = {mesh.thick_cells}')
     print(f'mesh.thin_cells = {mesh.thin_cells}')
 
+    # Allocate more emission points to the thick cells
+    part.Nx[mesh.thick_cells] = 2
+    part.Ny[mesh.thick_cells] = 2
+    part.Nt[mesh.thick_cells] = 4
+    part.N_omega[mesh.thick_cells] = 8
+    part.Nmu[mesh.thick_cells] = 4
+
     mesh.sigma_s = np.full((num_x_idx, num_y_idx), 0.0)
     mesh.sigma_t = np.copy(mesh.sigma_a)
 
@@ -794,17 +801,17 @@ def crooked_pipe(output_file):
     mat.b = mat.b * mat.rho  # converted to [jk/cm^3-keV]
     # mat.b[mesh.thick_cells] *= 10
 
-    print(f'mat.b = {mat.b}')
+    print(f'mat.b [Jk/cc-keV]= {mat.b}')
     # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
-    part.max_array_size = 700_000_000
+    part.max_array_size = 500_000_000
     part.particle_prop = np.zeros((part.max_array_size, 10), dtype=np.float64)
     part.n_particles = 0
 
 
     # Set start time and time-step
     time.time = 0.0
-    time.dt = 0.001    # shakes
-    time.dt_max = 1.0  # shakes
+    time.dt = 0.002    # shakes
+    time.dt_max = 0.002  # shakes
     t_final = 1.0
     time.dt_rampfactor = 1.1
     part.surface_Nmu = 16
@@ -876,7 +883,7 @@ def crooked_pipe(output_file):
                 # Advance particles through transport
                 if part.mode == 'nrn': 
                     if parallel:
-                        # Track initial particles
+                        # # Track initial particles
                         mesh.nrgdep, nrgscattered, x_Es, y_Es, tEs = imc_track.run_crooked_pipe_firstloop(
                             part.n_particles, part.particle_prop,
                             time.time, time.dt,
@@ -942,11 +949,12 @@ def crooked_pipe(output_file):
                             print(f'Converged in {iterations} iterations (Max cell error: {max_rel_error:.2%})')
                         else:
                             print(f'Reached max_iter ({max_iter}). Final max error: {max_rel_error:.2%}')
-                    else:
-                        mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run_crooked_pipe(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mesh.thin_cells, part.Nmu)
-                    
-                #     # Test RN version
-                #     # mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run2D(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck)
+                        # mesh.nrgdep = imc_track.run_crooked_pipe_loop_RN(
+                        #     part.n_particles, part.particle_prop,
+                        #     time.time, time.dt,
+                        #     mesh.sigma_a, mesh.sigma_s, mesh.fleck,
+                        #     mesh.x_edges, mesh.y_edges
+                        #     )
                 elif part.mode == 'rn':
                     if parallel:
                         mesh.nrgdep = imc_track.run_crooked_pipe_loop_RN(

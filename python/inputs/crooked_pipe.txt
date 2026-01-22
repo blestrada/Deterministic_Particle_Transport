@@ -5,11 +5,11 @@ y_edges         [0.00000, 1.00000e-01, 2.00000e-01, 3.00000e-01, 4.00000e-01, 5.
 Nx              2
 Ny              2
 Nmu             4
-Nomega          8
-Nt              5
+Nomega          6
+Nt              3
 surface_Ny      5
 surface_Nmu     8
 n_max           10000000
 mode            nrn
 scattering      implicit
-n_threads       8
+n_threads       12

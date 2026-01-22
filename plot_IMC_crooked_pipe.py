@@ -6,10 +6,10 @@ import matplotlib.animation as animation
 
 # Load your CSV
 # df = pd.read_csv("output_DPT_nx2_ny2_nt10_nmu2_nphi16.csv")
-df = pd.read_csv('temperature_history.csv')
+df = pd.read_csv('temperature_history_dpt_dt0.002.csv')
 # df = pd.read_csv("temperature_history_dpt_na1_nz1_nmu6_nmu_8_nt15_simga2000_ts0.5.csv")
 # df = pd.read_csv("temperature_history_IMC_1e6.csv")
-df_imc = pd.read_csv("temperature_history_IMC1e6_sigma2000_ts0.5.csv")
+df_imc = pd.read_csv("temperature_history_imc_dt0.002.csv")
 # df_imc = pd.read_csv("temperature_history_IMC_2e6.csv")
 # df_imc = pd.read_csv('temperature_history_nr2_nz_2_nmu8_nomega8_Nt5.csv')
 surface_temp=0.5
@@ -236,11 +236,11 @@ avg_temp_point3 = get_avg_temp(df, point_3_indices)
 avg_temp_point4 = get_avg_temp(df, point_4_indices)
 avg_temp_point5 = get_avg_temp(df, point_5_indices)
 
-# avg_radtemp_point1 = get_avg_rad_temp(df, point_1_indices)
-# avg_radtemp_point2 = get_avg_rad_temp(df, point_2_indices)
-# avg_radtemp_point3 = get_avg_rad_temp(df, point_3_indices)
-# avg_radtemp_point4 = get_avg_rad_temp(df, point_4_indices)
-# avg_radtemp_point5 = get_avg_rad_temp(df, point_5_indices)
+avg_radtemp_point1 = get_avg_rad_temp(df, point_1_indices)
+avg_radtemp_point2 = get_avg_rad_temp(df, point_2_indices)
+avg_radtemp_point3 = get_avg_rad_temp(df, point_3_indices)
+avg_radtemp_point4 = get_avg_rad_temp(df, point_4_indices)
+avg_radtemp_point5 = get_avg_rad_temp(df, point_5_indices)
 
 avg_temp_point1_imc = get_avg_temp(df_imc, point_1_indices)
 avg_temp_point2_imc = get_avg_temp(df_imc, point_2_indices)
@@ -248,11 +248,11 @@ avg_temp_point3_imc = get_avg_temp(df_imc, point_3_indices)
 avg_temp_point4_imc = get_avg_temp(df_imc, point_4_indices)
 avg_temp_point5_imc = get_avg_temp(df_imc, point_5_indices)
 
-# avg_radtemp_point1_imc = get_avg_rad_temp(df_imc, point_1_indices)
-# avg_radtemp_point2_imc = get_avg_rad_temp(df_imc, point_2_indices)
-# avg_radtemp_point3_imc = get_avg_rad_temp(df_imc, point_3_indices)
-# avg_radtemp_point4_imc = get_avg_rad_temp(df_imc, point_4_indices)
-# avg_radtemp_point5_imc = get_avg_rad_temp(df_imc, point_5_indices)
+avg_radtemp_point1_imc = get_avg_rad_temp(df_imc, point_1_indices)
+avg_radtemp_point2_imc = get_avg_rad_temp(df_imc, point_2_indices)
+avg_radtemp_point3_imc = get_avg_rad_temp(df_imc, point_3_indices)
+avg_radtemp_point4_imc = get_avg_rad_temp(df_imc, point_4_indices)
+avg_radtemp_point5_imc = get_avg_rad_temp(df_imc, point_5_indices)
 print(f'finished getting averages')
 plt.figure(figsize=(8,6))
 markersize=6.0
@@ -260,96 +260,69 @@ markeredgewidth=1.0
 # DPT temp
 plt.plot(avg_temp_point1["time"], 
          avg_temp_point1["temp"], 
-         marker="x", 
+         marker="*", 
          color="blue", 
-         label="DPT", 
+         label="DPT Tm", 
          markersize=markersize)
 plt.plot(avg_temp_point2["time"], 
          avg_temp_point2["temp"], 
-         marker="x", 
+         marker="*", 
          color="blue", 
          markersize=markersize)
 plt.plot(avg_temp_point3["time"], 
          avg_temp_point3["temp"], 
-         marker="x", 
+         marker="*", 
          color="blue", 
          markersize=markersize )
 plt.plot(avg_temp_point4["time"], 
          avg_temp_point4["temp"], 
-         marker="x", 
+         marker="*", 
          color="blue", 
          markersize=markersize)
 plt.plot(avg_temp_point5["time"], 
          avg_temp_point5["temp"], 
-         marker="x", 
+         marker="*", 
          color="blue", 
          markersize=markersize)
-
-# DPT rad temp
-# plt.plot(avg_radtemp_point1["time"], avg_radtemp_point1["radtemp"], 
-#          marker="+", color="blue", label="DPT Tr", )
-# plt.plot(avg_radtemp_point2["time"], avg_radtemp_point2["radtemp"], 
-#          marker="+", color="blue", )
-# plt.plot(avg_radtemp_point3["time"], avg_radtemp_point3["radtemp"], 
-#          marker="+", color="blue", )
-# plt.plot(avg_radtemp_point4["time"], avg_radtemp_point4["radtemp"], 
-#          marker="+", color="blue", )
-# plt.plot(avg_radtemp_point5["time"], avg_radtemp_point5["radtemp"], 
-#          marker="+", color="blue", )
-
 # IMC temp
-plt.plot(avg_temp_point1_imc["time"], 
-         avg_temp_point1_imc["temp"], 
-         marker="o", 
-         color="red", 
-         label="IMC", 
-         markersize=markersize, 
-         fillstyle='none', 
-         markeredgewidth=markeredgewidth)
-plt.plot(avg_temp_point2_imc["time"], 
-         avg_temp_point2_imc["temp"], 
-         marker="o", 
-         color="red", 
-         markersize=markersize, 
+plt.plot(avg_temp_point1_imc["time"],
+         avg_temp_point1_imc["temp"],
+         marker="o",
+         color="red",
+         label="IMC Tm",
+         markersize=markersize,
          fillstyle='none',
          markeredgewidth=markeredgewidth)
-plt.plot(avg_temp_point3_imc["time"], 
-         avg_temp_point3_imc["temp"], 
-         marker="o", 
-         color="red", 
-         markersize=markersize, 
+plt.plot(avg_temp_point2_imc["time"],
+         avg_temp_point2_imc["temp"],
+         marker="o",
+         color="red",
+         markersize=markersize,
          fillstyle='none',
          markeredgewidth=markeredgewidth)
-plt.plot(avg_temp_point4_imc["time"], 
-         avg_temp_point4_imc["temp"], 
-         marker="o", 
-         color="red", 
-         markersize=markersize, 
+plt.plot(avg_temp_point3_imc["time"],
+         avg_temp_point3_imc["temp"],
+         marker="o",
+         color="red",
+         markersize=markersize,
          fillstyle='none',
          markeredgewidth=markeredgewidth)
-plt.plot(avg_temp_point5_imc["time"], 
-         avg_temp_point5_imc["temp"], 
-         marker="o", 
-         color="red", 
-         markersize=markersize, 
+plt.plot(avg_temp_point4_imc["time"],
+         avg_temp_point4_imc["temp"],
+         marker="o",
+         color="red",
+         markersize=markersize,
          fillstyle='none',
          markeredgewidth=markeredgewidth)
-# IMC rad temp
-# plt.plot(avg_radtemp_point1_imc["time"], avg_radtemp_point1_imc["radtemp"], 
-#          marker="x", color="blue", label="IMC Tr", )
-# plt.plot(avg_radtemp_point2_imc["time"], avg_radtemp_point2_imc["radtemp"], 
-#          marker="x", color="blue", )
-# plt.plot(avg_radtemp_point3_imc["time"], avg_radtemp_point3_imc["radtemp"], 
-#          marker="x", color="blue", )
-# plt.plot(avg_radtemp_point4_imc["time"], avg_radtemp_point4_imc["radtemp"], 
-#          marker="x", color="blue", )
-# plt.plot(avg_radtemp_point5_imc["time"], avg_radtemp_point5_imc["radtemp"], 
-#          marker="x", color="blue", )
-
-
-
+plt.plot(avg_temp_point5_imc["time"],
+         avg_temp_point5_imc["temp"],
+         marker="o",
+         color="red",
+         markersize=markersize,
+         fillstyle='none',
+         markeredgewidth=markeredgewidth)
 plt.xlabel("Time [sh]")
-plt.ylabel(" Material Temperature [keV]")
+plt.ylabel("Temperature [keV]")
 plt.xscale("log")
 plt.yscale("log")
 plt.xlim(1e-3, 100.0)
@@ -357,22 +330,63 @@ plt.ylim(0.0, surface_temp)
 plt.legend()
 plt.grid(True, which="both", ls="--", alpha=0.5)
 plt.tight_layout()
-plt.savefig('fiducial_points.png',dpi=900)
+plt.savefig('fiducial_points_mat.png',dpi=900)
+plt.show()
+plt.close()
+
+plt.figure()
+# DPT rad temp
+plt.plot(avg_radtemp_point1["time"], avg_radtemp_point1["radtemp"], 
+         marker="+", color="blue", label="DPT Tr", )
+plt.plot(avg_radtemp_point2["time"], avg_radtemp_point2["radtemp"], 
+          marker="+", color="blue", )
+plt.plot(avg_radtemp_point3["time"], avg_radtemp_point3["radtemp"], 
+          marker="+", color="blue", )
+plt.plot(avg_radtemp_point4["time"], avg_radtemp_point4["radtemp"], 
+          marker="+", color="blue", )
+plt.plot(avg_radtemp_point5["time"], avg_radtemp_point5["radtemp"], 
+          marker="+", color="blue", )
+
+# IMC rad temp
+plt.plot(avg_radtemp_point1_imc["time"], avg_radtemp_point1_imc["radtemp"], 
+          marker="x", color="red", label="IMC Tr", )
+plt.plot(avg_radtemp_point2_imc["time"], avg_radtemp_point2_imc["radtemp"], 
+          marker="x", color="red", )
+plt.plot(avg_radtemp_point3_imc["time"], avg_radtemp_point3_imc["radtemp"], 
+          marker="x", color="red", )
+plt.plot(avg_radtemp_point4_imc["time"], avg_radtemp_point4_imc["radtemp"], 
+          marker="x", color="red", )
+plt.plot(avg_radtemp_point5_imc["time"], avg_radtemp_point5_imc["radtemp"], 
+          marker="x", color="red", )
+
+
+
+plt.xlabel("Time [sh]")
+plt.ylabel("Temperature [keV]")
+plt.xscale("log")
+plt.yscale("log")
+plt.xlim(1e-3, 100.0)
+plt.ylim(0.0, surface_temp)
+plt.legend()
+plt.grid(True, which="both", ls="--", alpha=0.5)
+plt.tight_layout()
+plt.savefig('fiducial_points_rad.png',dpi=900)
 plt.show()
 
-plot_thermal_energy = False
+plot_thermal_energy = True
 
 if plot_thermal_energy:
     num_x_idx = len(x_edges) - 1
     num_y_idx = len(y_edges) - 1
 
-    thin_opacity = 2.0
-    thick_opacity = 200.0
+    thin_opacity = 0.2 # 1/cm
+    thick_opacity = 2000.0 # 1/cm
+
     opacity = np.zeros((num_x_idx, num_y_idx))
     heat_capacity = np.zeros((num_x_idx, num_y_idx))
-    dx = np.diff(x_edges)
-    dy = np.diff(y_edges)
-    area = np.outer(dx, dy)
+    dz = np.diff(x_edges)
+    dr2 = np.diff(y_edges**2)
+    volume = np.pi * np.outer(dz, dr2)
 
     # Make thin and thick masks
     for i in range(num_x_idx):
@@ -385,7 +399,6 @@ if plot_thermal_energy:
             # Region 1: Bottom left
             if x_right <= 2.5 and y_top <= 0.5:
                 opacity[i, j] = thin_opacity
-                    
 
             # Region 2: Vertical left gap
             if 2.5 <= x_left <= 3.0 and y_top <= 1.5:
@@ -410,11 +423,10 @@ if plot_thermal_energy:
     thick_cells = ~thin_cells
 
     # Set heat capacities
-    heat_capacity[thick_cells] = 1.0 # jk/cm^3-keV
-    heat_capacity[thin_cells] = 1e-3 # jk/cm^3-keV
+    heat_capacity[thick_cells] = 1.0 # jk/cc-keV
+    heat_capacity[thin_cells] = 1e-3 # jk/cc-keV
 
     
-
     # Convert indices to integers
     df['x_idx'] = df['x_idx'].astype(int)
     df['y_idx'] = df['y_idx'].astype(int)
@@ -431,10 +443,10 @@ if plot_thermal_energy:
         return prop_array[x_i, y_i]
 
     df['heat_capacity'] = df.apply(lambda row: get_cell_property(row, heat_capacity), axis=1)
-    df['area'] = df.apply(lambda row: get_cell_property(row, area), axis=1)
+    df['vol'] = df.apply(lambda row: get_cell_property(row, volume), axis=1)
 
     df_imc['heat_capacity'] = df_imc.apply(lambda row: get_cell_property(row, heat_capacity), axis=1)
-    df_imc['area'] = df_imc.apply(lambda row: get_cell_property(row, area), axis=1)
+    df_imc['vol'] = df_imc.apply(lambda row: get_cell_property(row, volume), axis=1)
 
     # Assign cell type ('thin' or 'thick')
     def get_cell_type(row):
@@ -452,9 +464,9 @@ if plot_thermal_energy:
     df_imc['cell_type'] = df_imc.apply(get_cell_type, axis=1)
 
     # Calculate thermal energy for each cell
-    # thermal energy = temp * heat_capacity * area
-    df_imc['thermal_energy'] = df_imc['temp'] * df_imc['heat_capacity'] * df_imc['area']
-    df['thermal_energy'] = df['temp'] * df["heat_capacity"] * df["area"]
+    # thermal energy = temp [keV] * heat_capacity [Jk/cc-keV] * volume [cc] 
+    df_imc['thermal_energy'] = df_imc['temp'] * df_imc['heat_capacity'] * df_imc['vol']
+    df['thermal_energy'] = df['temp'] * df["heat_capacity"] * df["vol"]
     # --- 3. Aggregation and Plotting ---
 
     # Sum the thermal energy by time and cell type
@@ -466,7 +478,7 @@ if plot_thermal_energy:
     # Plotting
     plt.figure(figsize=(10, 6))
     plt.plot(plot_data_dpt.index, plot_data_dpt['thick'], label='DPT', marker='o', markersize=3)
-    plt.plot(plot_data_imc.index, plot_data_imc['thick'], label='IMC_1e6', marker='s', markersize=3)
+    plt.plot(plot_data_imc.index, plot_data_imc['thick'], label='IMC', marker='s', markersize=3)
     plt.xlabel('Time (sh)')
     plt.ylabel('Thermal Energy (jrk)')
     plt.title('Crooked Pipe Thermal energy in thick part')
@@ -474,5 +486,18 @@ if plot_thermal_energy:
     plt.grid(True)
     plt.xscale('log')
     
-    plt.savefig('thermal_energy_vs_time.png')
-    print("Plot saved as 'thermal_energy_vs_time.png'")
+    plt.savefig('thermal_energy_vs_time_thick.png')
+    plt.close()
+    print("Plot saved as 'thermal_energy_vs_time_thick.png'")
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(plot_data_dpt.index, plot_data_dpt['thin'], label='DPT', marker='o', markersize=3)
+    plt.plot(plot_data_imc.index, plot_data_imc['thin'], label='IMC', marker='s', markersize=3)
+    plt.xlabel('Time (sh)')
+    plt.ylabel('Thermal Energy (jrk)')
+    plt.title('Crooked Pipe Thermal energy in thin part')
+    plt.legend()
+    plt.grid(True)
+    plt.xscale('log')
+    
+    plt.savefig('thermal_energy_vs_time_thin.png')

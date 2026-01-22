@@ -152,7 +152,43 @@ def deterministic_sample_t_tanh_dist(n_samples,
     
     return t_values, weights
 
-
+@njit
+def deterministic_sample_r_tanh_dist(
+    n_samples: int,
+    alpha: float,
+    r_min: float,
+    r_max: float
+) -> tuple[NDArray, NDArray]:
+    """
+    Sample radius R using a tanh distribution to cluster points near r_min and r_max,
+    while maintaining the physical PDF weights of a cylindrical shell.
+    """
+    # 1. Generate the tanh-mapped values (p_values) in the range [0, 1]
+    # We use the same logic as the time-sampling but shifted to [0, 1]
+    i = np.arange(n_samples)
+    j = (i + 0.5) / n_samples - 0.5  # Range [-0.5, 0.5]
+    j_scaled = j * 2                 # Range [-1, 1]
+    
+    # This maps j_scaled to a non-linear range [0, 1]
+    # p_values will be clustered near 0 and 1
+    p_values = 0.5 + 0.5 * (np.tanh(alpha * j_scaled) / np.tanh(alpha))
+    
+    # 2. Map these p_values to Radius using the physical PDF (Cylindrical shell)
+    # r = sqrt(r_min^2 + p * (r_max^2 - r_min^2))
+    r_sq_diff = r_max**2 - r_min**2
+    r_values = np.sqrt(r_min**2 + p_values * r_sq_diff)
+    
+    # 3. Calculate weights
+    # The weight is composed of two parts:
+    # A) The tanh Jacobian: 1 / cosh^2(alpha * j_scaled)
+    # B) The Radial Jacobian: The uniform-to-radius transformation is self-correcting 
+    #    if we use the tanh weights directly.
+    weights = 1.0 / (np.cosh(alpha * j_scaled)**2)
+    
+    # 4. Normalize weights so their mean is 1.0
+    weights = weights / np.mean(weights)
+    
+    return r_values, weights
 
 def calculate_even_angles(ef, ef_ref=1/3, ef_max=1.0, n_min=2, n_max=16):
     # Calculate normalized deviation
@@ -1100,6 +1136,8 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
     start_count = n_particles
     for iz in range(nz_cells):
         for ir in range(nr_cells):
+            # if mesh_temp[iz, ir] <= 0.05:
+            #     continue
             # Cell volume
             zone_volume = volumes[iz, ir]
 
@@ -1113,8 +1151,8 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
             r_min = mesh_r_edges[ir]
             r_max = mesh_r_edges[ir+1]
             r_samples = part_Ny[iz, ir]
-            # r_values = deterministic_sample_radius(r_min, r_max, r_samples)
-            r_values, r_weights = weighted_sample_radius(r_min, r_max, r_samples)
+            r_values, r_weights = deterministic_sample_r_tanh_dist(r_samples, 4.0, r_min, r_max)
+            # r_values, r_weights = weighted_sample_radius(r_min, r_max, r_samples)
 
             # Generate mu
             mu_samples = part_Nmu[iz, ir]
@@ -1128,7 +1166,7 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
             t_samples = part_Nt[iz, ir]
             t_min = current_time
             t_max = current_time + dt
-            t_values, t_weights = deterministic_sample_t_tanh_dist(t_samples, 4.0, t_min, t_max)
+            t_values, t_weights = deterministic_sample_t_tanh_dist(t_samples, 3.0, t_min, t_max)
 
             # The total number of source particle in the cell
             n_cell_ptcls = len(z_values) * len(r_values) * len(mu_values) * len(phi_values) * len(t_values)
@@ -1152,7 +1190,7 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
                         for phi in phi_values:
                             for i_t, ttt in enumerate(t_values):
                                 if n_particles < part.max_array_size:
-                                    weighted_nrg = base_nrg * r_weights[i_r] * t_weights[i_t]
+                                    weighted_nrg = base_nrg * t_weights[i_t] * r_weights[i_r]
                                     # Assign: [emission_time, z_idx, r_idx, z, r, mu, phi, frq, nrg, startnrg]
                                     particle_prop[n_particles] = [ttt, iz, ir, z, r, mu, phi, 0, weighted_nrg, weighted_nrg]
                                     n_particles += 1
