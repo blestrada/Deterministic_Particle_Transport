@@ -1124,7 +1124,12 @@ def si02_cylinder(output_file):
     print(f"System max threads: {numba.config.NUMBA_DEFAULT_NUM_THREADS}")
 
     # Loop over timesteps
-    records = []
+    max_steps = 5000 
+    # Use float32 to save memory; mesh.temp.shape is (Nx, Ny)
+    nx, ny = mesh.temp.shape
+    temp_history = np.zeros((max_steps, nx, ny), dtype=np.float32)
+    radtemp_history = np.zeros((max_steps, nx, ny), dtype=np.float32)
+    time_history = np.zeros(max_steps, dtype=np.float32)
     try:
         with open(output_file, "wb") as fname:
             while time.time < t_final:
@@ -1264,7 +1269,10 @@ def si02_cylinder(output_file):
                 #     raise RuntimeError(f"Negative material temp detected! min(mesh.temp) = {np.min(mesh.temp)}")
                 # if np.any(mesh.radtemp < 0.0):
                 #     raise RuntimeError(f"Negative rad temp! min(mesh.radtemp) = {np.min(mesh.radtemp)}")
-                
+                if time.step < max_steps:
+                    time_history[time.step] = time.time
+                    temp_history[time.step, :, :] = mesh.temp
+                    radtemp_history[time.step, :, :] = mesh.radtemp
                 # Update time
                 time.time, time.dt, time.step = imc_update.ramping_time_step(
                                                 time.time, 
@@ -1272,28 +1280,26 @@ def si02_cylinder(output_file):
                                                 time.dt_max, 
                                                 time.dt_rampfactor, 
                                                 t_final, 
-                                                time.step
-)
-                nx, ny = mesh.temp.shape
-                for j in range(ny):
-                    for i in range(nx):
-                        records.append({
-                            "time": time.time,
-                            "x_idx": i,
-                            "y_idx": j,
-                            "temp": mesh.temp[i, j],
-                            "radtemp": mesh.radtemp[i, j]
-                        })
+                                                time.step)
             
     except KeyboardInterrupt:
         print()
     finally:
-        if records:
-            print("Saving data collected so far...")
-            df = pd.DataFrame(records)
-            df.to_csv("si02_temperature_history.csv", index=False)
-            print(f"Temperature history saved ({time.step} steps total)")
-        # Generate the plots even on failure/interrupt
+        # --- 3. FINAL DATA DUMP ---
+        # Trim the pre-allocated arrays to the actual steps taken
+        actual_steps = time.step
+        if actual_steps > 0:
+            print(f"Saving {actual_steps} steps of full-mesh data...")
+            # Save as binary (NPZ) - much faster and smaller than CSV for full meshes
+            np.savez_compressed(
+                "si02_results.npz",
+                time=time_history[:actual_steps],
+                temp=temp_history[:actual_steps],
+                radtemp=radtemp_history[:actual_steps],
+                z_edges=mesh.x_edges,
+                r_edges=mesh.y_edges
+            )
+            print("Data saved to si02_results.npz")
         try:
             plt.figure()
             pc = plt.pcolormesh(mesh.x_edges, mesh.y_edges, mesh.temp.T, cmap="inferno", shading="flat")
