@@ -3,11 +3,11 @@
 import pickle
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import os
 import time as tm
 import pandas as pd
 import numba
-import platform
 from numba import set_num_threads, get_num_threads
 import imc_update
 import imc_source
@@ -723,7 +723,7 @@ def crooked_pipe(output_file):
     print(f'thin_density = {thin_density} g/cc')
     print(f'thick_density = {thick_density} g/cc')
     thin_mass_opacity = 20.0 #[cm^2/g]
-    thick_mass_opacity = 200.0 # [cm^2/g]
+    thick_mass_opacity = 20.0 # [cm^2/g]
 
     thin_opacity = thin_mass_opacity * thin_density # [1/cm]
     print(f'thin_opacity = {thin_opacity} [1/cm]')
@@ -783,11 +783,12 @@ def crooked_pipe(output_file):
     print(f'mesh.thin_cells = {mesh.thin_cells}')
 
     # Allocate more emission points to the thick cells
-    # part.Nx[mesh.thick_cells] = 2
-    # part.Ny[mesh.thick_cells] = 2
-    # part.Nt[mesh.thick_cells] = 4
-    # part.N_omega[mesh.thick_cells] = 8
-    # part.Nmu[mesh.thick_cells] = 4
+    if part.mode == 'nrn':
+        part.Nx[mesh.thick_cells] = 3
+        part.Ny[mesh.thick_cells] = 3
+        # part.Nt[mesh.thick_cells] = 4
+        # part.N_omega[mesh.thick_cells] = 8
+        # part.Nmu[mesh.thick_cells] = 4
 
     mesh.sigma_s = np.full((num_x_idx, num_y_idx), 0.0)
     mesh.sigma_t = np.copy(mesh.sigma_a)
@@ -810,8 +811,8 @@ def crooked_pipe(output_file):
 
     # Set start time and time-step
     time.time = 0.0
-    time.dt = 0.002    # shakes
-    time.dt_max = 0.002  # shakes
+    time.dt = 0.005    # shakes
+    time.dt_max = 0.005  # shakes
     t_final = 1.0
     time.dt_rampfactor = 1.1
     part.surface_Nmu = 16
@@ -892,6 +893,8 @@ def crooked_pipe(output_file):
                         )
                         # This is our 0th iteration baseline
                         original_nrg_scattered = np.copy(nrgscattered)
+
+                        initial_l2_norm = np.linalg.norm(original_nrg_scattered) + 1e-15
                         
                         iterations = 0
                         max_iter = 10000  
@@ -917,15 +920,10 @@ def crooked_pipe(output_file):
                             # Clean scattered particles array
                             n_scattered_particles, scattered_particles = imc_track.clean2D(n_scattered_particles, scattered_particles, energy_col=int(8))
 
-                            # --- Per-Cell Convergence Check (2% of 0th Iteration) ---
-                            # We check if the remaining energy in EVERY cell is < 2% of that cell's original energy.
-                            # We use np.all() to ensure every single cell meets the condition.
-                            # 1e-12 is added to the denominator to prevent division by zero in non-scattering cells.
-                            
-                            relative_ratios = nrgscattered / (original_nrg_scattered + 1e-12)
-                            max_rel_error = np.max(relative_ratios)
+                            current_l2_norm = np.linalg.norm(nrgscattered)
+                            relative_l2_error = current_l2_norm / initial_l2_norm
 
-                            if max_rel_error < 0.01:
+                            if relative_l2_error < 0.01:
                                 converged = True
 
                             # Add scattered particle deposition to the mesh
@@ -946,9 +944,9 @@ def crooked_pipe(output_file):
                         mesh.nrgdep += nrgscattered
                         
                         if converged:
-                            print(f'Converged in {iterations} iterations (Max cell error: {max_rel_error:.2%})')
+                            print(f'Converged in {iterations} iterations')
                         else:
-                            print(f'Reached max_iter ({max_iter}). Final max error: {max_rel_error:.2%}')
+                            print(f'Reached max_iter ({max_iter}).')
                         # mesh.nrgdep = imc_track.run_crooked_pipe_loop_RN(
                         #     part.n_particles, part.particle_prop,
                         #     time.time, time.dt,
@@ -1043,6 +1041,280 @@ def crooked_pipe(output_file):
             plt.ylabel("r")
             plt.xlim(mesh.x_edges[0], mesh.x_edges[-1])
             plt.ylim(0,2)
+            plt.axis('scaled')
+            plt.tight_layout()
+            plt.title(f'Rad Temp at t={time.time}')
+            plt.show()
+        except Exception as plot_err:
+            print(f"Could not generate plots: {plot_err}")
+
+
+def si02_cylinder(output_file):
+    """SiO2 2D R-Z Problem"""
+    # Physical Properties
+    # density (g/cc) = 0.05 g/cc
+    # opacity (cm^2/g) = 2.70773 * rho ** 0.75 * T ** -3.53, T in keV
+    # EOS = 0.1448 * T ** 1.1 jrk/g, with T in keV
+    # initial temperature (keV) = 2.59E-5
+
+    # Set Physical Constants
+    phys.c = 2.99792458e2  # [cm/sh] 
+    phys.a = 0.01372 # jk / (cm^3-keV^4)
+    phys.sb = phys.a * phys.c / 4 # energy / (cm2 − sh −keV4)
+    phys.invc = 1.0 / phys.c
+    print(f'Physical constants: phys.c = {phys.c} [cm/sh], phys.a = {phys.a} [jk/(cm^3-keV^4)], phys.sb = {phys.sb} [jk/(cm2 − sh −keV4)]')
+    
+    print(f'mesh.dz = {mesh.dx}')
+    print(f'mesh.dr = {mesh.dy}')
+    # Initialize opacities, temperatures, fleck factor
+    num_x_idx = len(mesh.x_edges) - 1
+    num_y_idx = len(mesh.y_edges) - 1
+
+    T_initial = 2.59E-5 # keV
+    mesh.temp = np.full((num_x_idx, num_y_idx), T_initial)
+
+    mesh.fleck = np.full((num_x_idx, num_y_idx), 0.0)
+    mesh.radtemp = np.full((num_x_idx, num_y_idx), 0.0)
+
+    density = 0.05 # g/cc
+    mat.rho = np.full((num_x_idx, num_y_idx), density)
+
+    # Convert sourcing info into arrays
+    if part.mode == 'nrn':
+        part.Nmu = np.full((num_x_idx, num_y_idx), part.Nmu)
+        part.N_omega = np.full((num_x_idx, num_y_idx), part.N_omega)
+        part.Nx = np.full((num_x_idx, num_y_idx), part.Nx)
+        part.Ny = np.full((num_x_idx, num_y_idx), part.Ny)
+        part.Nt = np.full((num_x_idx, num_y_idx), part.Nt)
+
+    # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
+    part.max_array_size = 200_000_000
+    part.particle_prop = np.zeros((part.max_array_size, 10), dtype=np.float64)
+    part.n_particles = 0
+
+    # Set start time and time-step
+    time.time = 0.0
+    time.dt = 1.0e-6    # shakes
+    time.dt_max = 1.0e-4  # shakes
+    t_final = 0.4
+    time.dt_rampfactor = 1.1
+
+    bcon.T0 = 0.15 # keV
+    parallel = True
+
+    # RZ Volume Verification
+    dz = np.diff(mesh.x_edges)
+    dr2 = np.diff(mesh.y_edges**2)
+    vols = np.pi * np.outer(dz, dr2)
+
+    print(f"Innermost cell volume: {vols[0,0]}")
+    print(f"Cell next to it (radial): {vols[0,1]}")
+    print(f"Ratio (should be 3.0 for uniform dr): {vols[0,1]/vols[0,0]}")
+
+    # Set the desired number of threads
+    set_num_threads(threads.n_threads)
+
+    # Get the actual number of threads Numba will use
+    actual_threads = get_num_threads()
+
+    print(f"Requested threads: {threads.n_threads}")
+    print(f"Numba will use:     {actual_threads} threads")
+
+    # the maximum physical threads available on the system:
+    print(f"System max threads: {numba.config.NUMBA_DEFAULT_NUM_THREADS}")
+
+    # Loop over timesteps
+    records = []
+    try:
+        with open(output_file, "wb") as fname:
+            while time.time < t_final:
+                print()
+                print(f'Step: {time.step} @ time = {time.time}')
+                print(f"time.dt = {time.dt}")
+
+                # Update temperature dependent quantities
+                mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mat.b = imc_update.si02_update(mesh.temp, mat.rho, time.dt)
+                print(f'mesh.sigma_a = {mesh.sigma_a}')
+                print(f'mesh.fleck = {mesh.fleck}')
+                
+                if part.mode == 'nrn':
+                    part.n_particles, part.particle_prop = imc_source.crooked_pipe_surface_particles(bcon.T0, part.n_particles, part.particle_prop, 
+                                                                                                     part.surface_Ny, part.surface_Nmu, 
+                                                                                                     part.surface_N_omega, part.surface_Nt, 
+                                                                                                     time.time, time.dt, mesh.y_edges)
+                    part.n_particles, part.particle_prop = imc_source.crooked_pipe_body_particles(part.n_particles, part.particle_prop,
+                                                                                                  part.Nx, part.Ny, part.Nmu, part.N_omega, part.Nt, 
+                                                                                                  time.time, time.dt, 
+                                                                                                  mesh.y_edges, mesh.x_edges, 
+                                                                                                  mesh.temp, mesh.fleck, 
+                                                                                                  mesh.sigma_a)
+                elif part.mode == 'rn':
+                    part.n_particles, part.particle_prop = imc_source.run2D(mesh.fleck, mesh.temp, mesh.sigma_a, part.particle_prop, part.n_particles, time.time, time.dt, mesh.x_edges, mesh.y_edges)
+                print(f'finished sourcing particles.')
+                
+                # Advance particles through transport
+                if part.mode == 'nrn': 
+                    if parallel:
+                        # # Track initial particles
+                        mesh.nrgdep, nrgscattered, x_Es, y_Es, tEs = imc_track.run_crooked_pipe_firstloop(
+                            part.n_particles, part.particle_prop,
+                            time.time, time.dt,
+                            mesh.sigma_a, mesh.sigma_s, mesh.sigma_t,
+                            mesh.fleck, mesh.x_edges, mesh.y_edges
+                        )
+                        # This is our 0th iteration baseline
+                        original_nrg_scattered = np.copy(nrgscattered)
+
+                        initial_l2_norm = np.linalg.norm(original_nrg_scattered)
+                        
+                        iterations = 0
+                        max_iter = 10000  
+                        converged = False
+
+                        while not converged and iterations < max_iter:
+                            # Generate scattered particles
+                            scattered_particles, n_scattered_particles = imc_track.generate_scattered_particles_no_distribution(
+                                nrgscattered, x_Es, y_Es, tEs,
+                                mesh.x_edges, mesh.y_edges, mesh.dx, mesh.dy,
+                                part.max_array_size, part.Nx, part.Ny, part.Nt, part.Nmu, part.N_omega,
+                                time.time, time.dt
+                            )
+
+                            # Track scattered particles
+                            nrgdep_scat, nrgscattered, x_Es, y_Es, tEs = imc_track.run_crooked_pipe_firstloop(
+                                n_scattered_particles, scattered_particles,
+                                time.time, time.dt,
+                                mesh.sigma_a, mesh.sigma_s, mesh.sigma_t,
+                                mesh.fleck, mesh.x_edges, mesh.y_edges
+                            )
+                            
+                            # Clean scattered particles array
+                            n_scattered_particles, scattered_particles = imc_track.clean2D(n_scattered_particles, scattered_particles, energy_col=int(8))
+
+                            current_l2_norm = np.linalg.norm(nrgscattered)
+                            relative_l2_error = current_l2_norm / initial_l2_norm
+
+                            if relative_l2_error < 0.01:
+                                converged = True
+
+                            # Add scattered particle deposition to the mesh
+                            mesh.nrgdep += nrgdep_scat
+
+                            # Copy scattered particles into global array
+                            n_existing_particles = part.n_particles
+                            n_total_particles = n_existing_particles + n_scattered_particles
+                            if n_total_particles > part.max_array_size:
+                                raise ValueError(f"Not enough space in global array at iteration {iterations}")
+
+                            part.particle_prop[n_existing_particles:n_total_particles, :] = scattered_particles[:n_scattered_particles, :]
+                            part.n_particles = n_total_particles
+                        
+                            iterations += 1
+
+                        # After converging, dump remaining scattered energy
+                        mesh.nrgdep += nrgscattered
+                        
+                        if converged:
+                            print(f'Converged in {iterations} iterations')
+                        else:
+                            print(f'Reached max_iter ({max_iter}).')
+                        # mesh.nrgdep = imc_track.run_crooked_pipe_loop_RN(
+                        #     part.n_particles, part.particle_prop,
+                        #     time.time, time.dt,
+                        #     mesh.sigma_a, mesh.sigma_s, mesh.fleck,
+                        #     mesh.x_edges, mesh.y_edges
+                        #     )
+                elif part.mode == 'rn':
+                    if parallel:
+                        mesh.nrgdep = imc_track.run_crooked_pipe_loop_RN(
+                            part.n_particles, part.particle_prop,
+                            time.time, time.dt,
+                            mesh.sigma_a, mesh.sigma_s, mesh.fleck,
+                            mesh.x_edges, mesh.y_edges
+                            )
+                    else:
+                        mesh.nrgdep, part.n_particles, part.particle_prop = imc_track.run2D(part.n_particles, part.particle_prop, time.time, time.dt, mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mesh.x_edges, mesh.y_edges)
+                print(f'mesh.nrgdep = {mesh.nrgdep}')
+                print(f'sum of nrgdep = {np.sum(mesh.nrgdep)}')
+                # plt.figure()
+                # pc = plt.pcolormesh(mesh.x_edges, mesh.y_edges, mesh.nrgdep.T / vols.T, cmap="inferno", shading="flat")
+                # plt.colorbar(pc, label="nrgdep [jrk]")
+                # plt.xlabel("z")
+                # plt.ylabel("r")
+                # plt.xlim(mesh.x_edges[0], mesh.x_edges[-1])
+                # plt.axis('scaled')
+                # plt.title(f"nrgdep at t={time.time}")
+                # plt.tight_layout()
+                # plt.show()
+
+                # Clean up particles that had their energy set to -1.0
+                part.n_particles, part.particle_prop = imc_track.clean2D(part.n_particles, part.particle_prop)
+                print(f'Number of particle at end of step = {part.n_particles}')
+                
+                # Tally
+                mesh.temp, mesh.radtemp = imc_tally.crooked_pipe_tally(mesh.nrgdep, mesh.x_edges, mesh.y_edges, part.n_particles, part.particle_prop, mesh.temp, mesh.sigma_a, mesh.fleck, mat.b, time.dt)
+                print(f'mesh.temp = {mesh.temp}')
+                print(f'mesh.radtemp = {mesh.radtemp}')
+                if np.any(mesh.temp < 0.0):
+                    raise RuntimeError(f"Negative material temp detected! min(mesh.temp) = {np.min(mesh.temp)}")
+                if np.any(mesh.radtemp < 0.0):
+                    raise RuntimeError(f"Negative rad temp! min(mesh.radtemp) = {np.min(mesh.radtemp)}")
+                
+                # Update time
+                time.time = round(time.time + time.dt, 8)
+                time.step += 1
+                # Make a larger time-step
+                if time.dt < time.dt_max:
+                    # Increase time-step
+                    time.dt = time.dt * time.dt_rampfactor
+                    if time.dt > time.dt_max:
+                        time.dt = time.dt_max
+
+                # Check for final time-step
+                if time.time + time.dt > t_final:
+                    time.dt = t_final - time.time
+                nx, ny = mesh.temp.shape
+                for j in range(ny):
+                    for i in range(nx):
+                        records.append({
+                            "time": time.time,
+                            "x_idx": i,
+                            "y_idx": j,
+                            "temp": mesh.temp[i, j],
+                            "radtemp": mesh.radtemp[i, j]
+                        })
+            
+    except KeyboardInterrupt:
+        print()
+    finally:
+        if records:
+            print("Saving data collected so far...")
+            df = pd.DataFrame(records)
+            df.to_csv("si02_temperature_history.csv", index=False)
+            print(f"Temperature history saved ({time.step} steps total)")
+        # Generate the plots even on failure/interrupt
+        try:
+            plt.figure()
+            pc = plt.pcolormesh(mesh.x_edges, mesh.y_edges, mesh.temp.T, cmap="inferno", shading="flat")
+            plt.colorbar(pc, label="Temperature [keV]")
+            # plt.clim(vmin=0.01, vmax=bcon.T0)  # Adjust vmin to be > 0 for log scale
+            plt.xlabel("z")
+            plt.ylabel("r")
+            plt.xlim(mesh.x_edges[0], mesh.x_edges[-1])
+            plt.ylim(mesh.y_edges[0], mesh.y_edges[-1])
+            plt.axis('scaled')
+            plt.title(f"Temperature at t={time.time}")
+            plt.tight_layout()
+            plt.show()
+
+            plt.figure()
+            pc = plt.pcolormesh(mesh.x_edges, mesh.y_edges, mesh.radtemp.T, cmap='inferno', shading='flat')        
+            plt.colorbar(pc, label=f'Radiation Temp [keV]')
+            plt.clim(vmin=0.00, vmax=bcon.T0)
+            plt.xlabel("z")
+            plt.ylabel("r")
+            plt.xlim(mesh.x_edges[0], mesh.x_edges[-1])
+            plt.ylim(mesh.y_edges[0], mesh.y_edges[-1])
             plt.axis('scaled')
             plt.tight_layout()
             plt.title(f'Rad Temp at t={time.time}')

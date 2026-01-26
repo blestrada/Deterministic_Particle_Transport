@@ -39,7 +39,7 @@ def read(input_file):
             if keyw == "spatial_dims":
                 mesh.num_spatial_dim = int(keyv)  
 
-            elif keyw == "surface_ny":
+            elif keyw == "surface_nr":
                 part.surface_Ny = int(keyv)
 
             elif keyw == "ny":
@@ -47,6 +47,12 @@ def read(input_file):
 
             elif keyw == "surface_nmu":
                 part.surface_Nmu = int(keyv)
+
+            elif keyw == "surface_nphi":
+                part.surface_N_omega = int(keyv)
+
+            elif keyw == "surface_nt":
+                part.surface_Nt = int(keyv)
 
             elif keyw == "x_edges":
                 try:

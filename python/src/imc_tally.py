@@ -154,7 +154,8 @@ def general_tally(nrgdep, n_particles, particle_prop, temp):
 def crooked_pipe_tally(nrgdep, 
                        mesh_z_edges, mesh_r_edges, 
                        n_particles, particle_prop, 
-                       temp, mesh_sigma_a, mesh_fleck, dt):
+                       temp, mesh_sigma_a, mesh_fleck, mat_b, 
+                       dt):
     # z corresponds to your x-axis, r corresponds to your y-axis
     num_z_cells = len(mesh_z_edges) - 1
     num_r_cells = len(mesh_r_edges) - 1
@@ -182,8 +183,9 @@ def crooked_pipe_tally(nrgdep,
 
     # 4. Material temperature update
     # Note: Ensure mat.b (Cv) is in units of keV / (cm^3 * keV_temp)
-    temp = temp + (nrg_inc / mat.b)
-    
+    temp = temp + (nrg_inc / mat_b)
+    print(f'nrg_inc = {nrg_inc}')
+    print(f'mat_b = {mat_b}')
     # 5. Calculate the Census Radiation Temperature
     # We sum the energies of particles currently in flight (census)
     radnrgdens_census = np.zeros((num_z_cells, num_r_cells))

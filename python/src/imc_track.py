@@ -1241,11 +1241,11 @@ def track_single_particle(
 
         # Energy cutoff echeck
         # Kill particle if nrg < 0.01 * startnrg
-        # if nrg < 0.01 * startnrg:
-        #     priv_dep[tid, z_cell_idx, r_cell_idx] += nrg  # Deposit remaining energy
-        #     particle_prop[iptcl, 8] = -1.0               # Mark as dead
-        #     history_continues = False
-        #     continue # Exit loop for this particle
+        if nrg < 0.001 * startnrg:
+            priv_dep[tid, z_cell_idx, r_cell_idx] += nrg  # Deposit remaining energy
+            particle_prop[iptcl, 8] = -1.0               # Mark as dead
+            history_continues = False
+            continue # Exit loop for this particle
 
         # Event Handling
         if event == 0:
@@ -1507,10 +1507,10 @@ def generate_scattered_particles_no_distribution(
 
             # Space, angle, and time grids
             z_values = imc_source.deterministic_sample_z(mesh_z_edges[iz], mesh_z_edges[iz+1], ptcl_Nx[iz,ir])
-            r_values, r_weights = imc_source.deterministic_sample_r_tanh_dist(ptcl_Ny[iz,ir], 4.0, mesh_r_edges[ir], mesh_r_edges[ir+1])
+            r_values = imc_source.deterministic_sample_radius(mesh_r_edges[ir], mesh_r_edges[ir+1], ptcl_Ny[iz,ir])
             mu_values = imc_source.deterministic_sample_mu_isotropic(ptcl_Nmu[iz,ir])
             phi_values = imc_source.deterministic_sample_phi_isotropic(ptcl_N_phi[iz,ir])
-            t_values, t_weights = imc_source.deterministic_sample_t_tanh_dist(ptcl_Nt[iz,ir], 4.0, current_time, current_time + dt)
+            t_values = imc_source.deterministic_sample_z(current_time, current_time + dt, ptcl_Nt[iz,ir])
 
             n_cell_ptcls = len(z_values) * len(r_values) * len(mu_values) * len(phi_values) * len(t_values)
 
@@ -1525,7 +1525,7 @@ def generate_scattered_particles_no_distribution(
                             for i_t, ttt in enumerate(t_values):
                                 if n_scattered_particles >= ptcl_max_array_size:
                                     raise RuntimeError("Maximum number of scattered particles reached")
-                                weighted_nrg = base_nrg * r_weights[i_r] * t_weights[i_t]
+                                weighted_nrg = base_nrg
                                 idx = n_scattered_particles
                                 scattered_particles[idx, 0] = ttt   # emission time
                                 scattered_particles[idx, 1] = iz    # z cell index
@@ -1606,8 +1606,8 @@ def track_single_particle_RN(iptcl, particle_prop, mesh_z_edges, mesh_r_edges,
         # Update particle energy
         nrg = newnrg
 
-        # --- NEW ROULETTE / THRESHOLD CHECK ---
-        if nrg < 0.01 * startnrg:
+        # --- THRESHOLD CHECK ---
+        if nrg < 0.001 * startnrg:
             priv_dep[tid, z_cell_idx, r_cell_idx] += nrg  # Deposit remaining energy
             particle_prop[iptcl, 8] = -1.0               # Mark as dead
             history_continues = False
@@ -1660,11 +1660,12 @@ def run_crooked_pipe_loop_RN(n_particles, particle_prop, current_time, dt,
     num_z_cells = len(mesh_z_edges) - 1
     num_r_cells = len(mesh_r_edges) - 1
 
+    n_threads = config.NUMBA_NUM_THREADS
+
     # Global tallies
     nrgdep = np.zeros((num_z_cells, num_r_cells), dtype=np.float64)
 
     # Private tallies for each thread
-    n_threads = numba.get_num_threads()
     priv_dep = np.zeros((n_threads, num_z_cells, num_r_cells), dtype=np.float64)
 
     endsteptime = current_time + dt
@@ -2169,11 +2170,11 @@ def treat_boundary_RZ(mu, phi, r_idx, z_idx,
         if mu > 0:
             z_idx += 1
             if z_idx >= Nz:
-                alive = False # Vacuum Top
+                alive = False # Vacuum at Zmax
         else:
             z_idx -= 1
             if z_idx < 0:
-                # Bottom Reflection
+                # Vacuum at z=0
                 alive = False
                 
     # Check Radial Faces

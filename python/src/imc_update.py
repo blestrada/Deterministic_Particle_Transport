@@ -68,6 +68,35 @@ def crooked_pipe_update(mesh_sigma_a, temp, dt):
     return fleck
 
 
+def si02_update(temp, rho, dt):
+    # Calculate heat capacity
+    c_v = 0.1448 * 1.1 * (temp ** 0.1) # jrk/g-keV
+    c_v *= rho # jrk/cc-keV
+    mat_b = c_v
+    print(f'c_v [jrk/cc-keV]= {c_v}')
+    # Calculate opacity
+    sigma_a = 2.70773 * rho ** 0.75 * temp ** -3.53 * rho
+    sigma_a = np.clip(sigma_a, None, 1e9)
+
+    sigma_s = np.zeros_like(sigma_a)
+    sigma_t = np.copy(sigma_a)
+
+    # Calculate beta
+    beta = 4 * phys.a * temp ** 3 / (c_v) # unitless
+
+    # Update the Fleck factor
+    fleck = 1.0 / (1.0 + beta * sigma_a * phys.c * dt)
+
+    # Check that Fleck is physically valid
+    if np.any(fleck < 0.0) or np.any(fleck > 1.0):
+        raise RuntimeError(
+            f"Invalid Fleck factor detected! "
+            f"min = {np.min(fleck)}, max = {np.max(fleck)}"
+        )
+    print(f'fleck = {fleck}')
+    return sigma_a, sigma_s, sigma_t, fleck, mat_b
+
+
 @njit
 def population_control(n_particles, particle_prop, current_time, Nmu):
     """Reduces the number of particles and consolidates energy in the census grid."""

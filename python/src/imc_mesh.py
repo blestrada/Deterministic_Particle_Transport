@@ -80,8 +80,8 @@ def make_2D(x_edges, y_edges, plot_mesh=False):
 
     x_centers = 0.5 * (x_edges[:-1] + x_edges[1:])
     y_centers = 0.5 * (y_edges[:-1] + y_edges[1:])
-    print(f'number of x(z) zones = {len(x_centers)}')
-    print(f'number of y(r) zones = {len(y_centers)}')
+    print(f'number of (z) zones = {len(x_centers)}')
+    print(f'number of (r) zones = {len(y_centers)}')
     if plot_mesh == True:
         fig, ax = plt.subplots()
 
