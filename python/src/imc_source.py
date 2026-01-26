@@ -866,7 +866,7 @@ def run(fleck, temp, sigma_a, particle_prop, n_particles, current_time, dt):
 
     return n_particles, particle_prop
 
-
+@njit
 def imc_get_energy_sources_2D(body_source, surface_source, 
                               fleck, temp, dt, sigma_a, mesh_z_edges, mesh_r_edges):
     """
@@ -899,20 +899,70 @@ def imc_get_energy_sources_2D(body_source, surface_source,
 
     e_surf = 0.0
     if surface_source:
-        print(f'Surface at temp = {bcon.T0}')
+        print('Surface at temp =',bcon.T0)
         surface_length = 0.08
         e_surf = phys.sb * bcon.T0 ** 4 * dt * (np.pi * surface_length**2)
 
     # Total energy emitted
     e_total = e_surf + np.sum(e_body)
     print("\nEnergy radiated in timestep:")
-    print(f'Energy emitted by body-source: {np.sum(e_body)}')
-    print(f'Energy emitted by surface source: {e_surf}')
+    print('Energy emitted by body-source: {np.sum(e_body)}')
+    print('Energy emitted by surface source: {e_surf}')
     print("Total energy emitted: {:24.16E}".format(e_total))
     return e_surf, e_body, e_total
 
+@njit
+def imc_get_energy_sources_2D(body_source, surface_source, 
+                              fleck, temp, dt, sigma_a, 
+                              mesh_z_edges, mesh_r_edges,
+                              phys_a, phys_c, phys_sb, bcon_T0):
+    """
+    Calculates RZ energy source terms using cylindrical volumes.
+    Numba-compatible version.
+    """
+    num_z = len(mesh_z_edges) - 1
+    num_r = len(mesh_r_edges) - 1
+    
+    # Initialize body energy array
+    e_body = np.zeros((num_z, num_r))
+
+    if body_source:
+        # Pre-calculate RZ volumes for the entire mesh
+        dz = np.diff(mesh_z_edges)
+        dr2 = np.diff(mesh_r_edges**2)
+        
+        # Numba supports np.outer
+        volumes = np.pi * np.outer(dz, dr2)
+
+        # Volumetric emission rate calculation
+        e_body = (
+            fleck * sigma_a * phys_a * phys_c * temp**4 * volumes * dt
+        )
+
+    e_surf = 0.0
+    if surface_source:
+        # Surface area of the disk at Z=0: pi * R_max^2
+        surface_radius = mesh_r_edges[-1] 
+        e_surf = phys_sb * (bcon_T0 ** 4) * dt * (np.pi * surface_radius**2)
+
+    # Total energy emitted
+    sum_e_body = np.sum(e_body)
+    e_total = e_surf + sum_e_body
+    
+    # Numba compatible printing (no f-strings in older Numba, use .format or standard)
+    print("\nEnergy radiated in timestep:")
+    print("Energy emitted by body-source: ", sum_e_body)
+    print("Energy emitted by surface source: ", e_surf)
+    print("Total energy emitted: ", e_total)
+    
+    return e_surf, e_body, e_total
+
+@njit
 def imc_get_emission_probabilities2D(e_surf, e_body, e_total):
-    """Convert energy source terms into particle emission probabilities"""
+    """
+    Convert energy source terms into particle emission probabilities.
+    Numba-compatible version.
+    """
     # Initialize probabilities
     p_surf = 0.0
     p_body = np.zeros_like(e_body)
@@ -922,146 +972,206 @@ def imc_get_emission_probabilities2D(e_surf, e_body, e_total):
         p_surf = e_surf / e_total
 
         # Probability of emission from each cell in the body source
-        if np.sum(e_body) > 0.0:
+        # Summing e_body to check for content
+        sum_e_body = np.sum(e_body)
+        if sum_e_body > 0.0:
             p_body = e_body / e_total
-    print(f'p_surf = {p_surf}')
-    print(f'p_body (sum) = {np.sum(p_body)}')
+
+    print("p_surf =", p_surf)
+    print("p_body (sum) =", np.sum(p_body))
+    
     return p_surf, p_body
 
 
-def imc_get_source_particle_numbers2D(p_surf, p_body):
-    """Calculate the number of source particles to create from the surface and body"""
-    n_input = part.n_input
-    print(f'User requested {part.n_input} particles per time-step')
+@njit
+def imc_get_source_particle_numbers2D(p_surf, p_body, n_input):
+    """
+    Calculate the number of source particles to create from the surface and body.
+    Numba-compatible version.
+    """
+    print("User requested", n_input, "particles per time-step")
 
     # initialize counts for each source type
     n_surf = 0
-    n_body = np.zeros_like(p_body, dtype=int)
+    # Create the array explicitly inside the JIT function
+    n_body = np.zeros(p_body.shape, dtype=np.int64)
 
     # --- Step 1: Ensure at least 1 particle for each source ---
     if p_surf > 0.0:
         n_surf = 1
-    n_body[p_body > 0.0] = 1
+    
+    # Numba handles boolean indexing for assignment
+    for i in range(p_body.shape[0]):
+        for j in range(p_body.shape[1]):
+            if p_body[i, j] > 0.0:
+                n_body[i, j] = 1
 
     # Subtract allocated particles from budget
     allocated = n_surf + np.sum(n_body)
     remaining = n_input - allocated
+    
     if remaining < 0:
+        # Numba supports raising certain exceptions without string formatting
         raise ValueError("Requested too few particles to satisfy minimum allocation.")
 
     # --- Step 2: Sample the remaining particles ---
+    # flattened views and cumsum are supported
     body_flat = p_body.flatten()
     body_cum = np.cumsum(body_flat)
-    if body_cum[-1] > 0.0:
-        body_cum /= body_cum[-1]
+    
+    # Normalize if needed
+    last_val = body_cum[-1]
+    if last_val > 0.0:
+        body_cum = body_cum / last_val
 
     for _ in range(remaining):
         eta = np.random.rand()
         if eta <= p_surf:
             n_surf += 1
         else:
-            eta_body = (eta - p_surf) / (1 - p_surf) if p_surf < 1.0 else 0.0
+            # Safe division check
+            denom = 1.0 - p_surf
+            eta_body = (eta - p_surf) / denom if denom > 0.0 else 0.0
+            
             idx = np.searchsorted(body_cum, eta_body)
+            # divmod is supported by Numba
             i, j = divmod(idx, p_body.shape[1])
             n_body[i, j] += 1
 
     # --- Step 3: Consistency check ---
     total_particles = n_surf + np.sum(n_body)
     if total_particles != n_input:
-        raise RuntimeError(
-            f"Particle allocation mismatch: expected {n_input}, got {total_particles}"
-        )
+        raise RuntimeError("Particle allocation mismatch.")
 
     print("Surface source:", n_surf)
-    print("Body source (per cell):")
-    print(n_body)
+    print("Body source total:", np.sum(n_body))
 
     return n_surf, n_body
 
-
+@njit
 def imc_source_particles2D(
     e_surf, n_surf, e_body, n_body, particle_prop, n_particles,
-    current_time, dt, mesh_z_edges, mesh_r_edges
+    current_time, dt, mesh_z_edges, mesh_r_edges, max_particles
 ):
-    """For known energy distribution, create source particles and add to pre-allocated array.
-    
-    particle_prop format:
-    [emission_time, x_idx, y_idx, xpos, ypos, theta, frq, nrg, startnrg]
     """
-    max_particles = part.max_array_size
-
+    Create source particles and add to pre-allocated array.
+    Numba-compatible version.
+    """
     # --- Surface source particles ---
+    # Surface source is at z=0, covering the disk up to r_max
     if n_surf > 0 and e_surf > 0.0:
         nrg = e_surf / float(n_surf)
         startnrg = nrg
+        r_max = mesh_r_edges[-1]
+        
         for _ in range(n_surf):
             if n_particles >= max_particles:
-                raise RuntimeError("Maximum number of particles reached in surface source.")
-            z = 1e-12
-            r = sample_radius(0.0, 0.08)
+                # Numba supports simple strings in exceptions
+                raise RuntimeError("Max particles reached in surface source.")
+            
+            z = 1e-12 # Tiny epsilon off the boundary
+            r = sample_radius(0.0, r_max)
+            
             # Cell indices
             z_idx = 0
+            # np.searchsorted is supported by Numba
             r_idx = np.searchsorted(mesh_r_edges, r) - 1
-            # print(f'r_idx = {r_idx}')
-            # Time, frequency, angle
+            
+            # Sample time, angle, and frequency
             ttt = sample_z(current_time, current_time + dt)
             frq = 0.0
-            mu = sample_mu_lambertian()  # Lambertian sampling for mu
+            mu = sample_mu_lambertian() 
             phi = sample_phi_isotropic()
-            # Store
-            particle_prop[n_particles] = [
-                ttt, z_idx, r_idx, z, r, mu, phi, frq, nrg, startnrg
-            ]
+            
+            # Store in the pre-allocated array
+            # Note: Ensure particle_prop has 10 columns to match this list
+            particle_prop[n_particles, 0] = ttt
+            particle_prop[n_particles, 1] = float(z_idx)
+            particle_prop[n_particles, 2] = float(r_idx)
+            particle_prop[n_particles, 3] = z
+            particle_prop[n_particles, 4] = r
+            particle_prop[n_particles, 5] = mu
+            particle_prop[n_particles, 6] = phi
+            particle_prop[n_particles, 7] = frq
+            particle_prop[n_particles, 8] = nrg
+            particle_prop[n_particles, 9] = startnrg
+            
             n_particles += 1
 
     # --- Body source particles ---
     if np.sum(n_body) > 0 and np.sum(e_body) > 0.0:
-        for i in range(n_body.shape[0]): # Z index
-            for j in range(n_body.shape[1]): # R index
-                if n_body[i, j] > 0:
-                    nrg = e_body[i, j] / float(n_body[i, j])
+        nz, nr = n_body.shape
+        for i in range(nz): # Z index
+            for j in range(nr): # R index
+                count = n_body[i, j]
+                if count > 0:
+                    nrg = e_body[i, j] / float(count)
                     startnrg = nrg
-                    for _ in range(n_body[i, j]):
+                    
+                    for _ in range(count):
                         if n_particles >= max_particles:
-                            raise RuntimeError("Maximum number of particles reached in body source.")
-                        # Sample uniformly inside the cell
+                            raise RuntimeError("Max particles reached in body source.")
+                        
+                        # Sample uniformly inside the cylindrical cell volume
                         z = sample_z(mesh_z_edges[i], mesh_z_edges[i+1])
                         r = sample_radius(mesh_r_edges[j], mesh_r_edges[j+1])
-                        # Indices
-                        z_idx, r_idx = i, j
-                        # Time, frequency, angle
+                        
                         ttt = sample_z(current_time, current_time + dt)
                         frq = 0.0
                         mu = sample_mu_isotropic()
                         phi = sample_phi_isotropic()
+                        
                         # Store
-                        particle_prop[n_particles] = [
-                            ttt, z_idx, r_idx, z, r, mu, phi, frq, nrg, startnrg
-                        ]
+                        particle_prop[n_particles, 0] = ttt
+                        particle_prop[n_particles, 1] = float(i)
+                        particle_prop[n_particles, 2] = float(j)
+                        particle_prop[n_particles, 3] = z
+                        particle_prop[n_particles, 4] = r
+                        particle_prop[n_particles, 5] = mu
+                        particle_prop[n_particles, 6] = phi
+                        particle_prop[n_particles, 7] = frq
+                        particle_prop[n_particles, 8] = nrg
+                        particle_prop[n_particles, 9] = startnrg
+                        
                         n_particles += 1
 
     return n_particles, particle_prop
 
+@njit
+def run2D(fleck, temp, sigma_a, particle_prop, n_particles, 
+          current_time, dt, mesh_z_edges, mesh_r_edges, 
+          step_num, n_input, max_particles,
+          phys_a, phys_c, phys_sb, bcon_T0):
+    
+    # Numba doesn't like complex string multiplication inside JIT
+    print("\n-------------------------------------------------------------------------------")
+    print("Source step:", step_num)
+    print("-------------------------------------------------------------------------------")
 
-def run2D(fleck, temp, sigma_a, particle_prop, n_particles, current_time, dt, mesh_z_edges, mesh_r_edges):
-    print("\n" + "-" * 79)
-    print("Source step ({:4d})".format(time.step))
-    print("-" * 79)
+    # 1. Get the energy source terms
+    # Pass constants for a, c, sb, and T0
+    e_surf, e_body, e_total = imc_get_energy_sources_2D(
+        True, True, fleck, temp, dt, sigma_a, 
+        mesh_z_edges, mesh_r_edges,
+        phys_a, phys_c, phys_sb, bcon_T0
+    )
 
-    # Get the energy source terms
-    e_surf, e_body, e_total = imc_get_energy_sources_2D(True, True, fleck, temp, dt, sigma_a, mesh_z_edges, mesh_r_edges)
-
-    # Get emission probabilities
+    # 2. Get emission probabilities
     p_surf, p_body = imc_get_emission_probabilities2D(e_surf, e_body, e_total)
 
-    # Determine number of source particles
-    n_surf, n_body = imc_get_source_particle_numbers2D(p_surf, p_body)
+    # 3. Determine number of source particles
+    # Pass n_input explicitly
+    n_surf, n_body = imc_get_source_particle_numbers2D(p_surf, p_body, n_input)
 
-    # Create particles
-    n_particles, particle_prop = imc_source_particles2D(e_surf, n_surf, e_body, n_body, particle_prop, n_particles, current_time, dt, mesh_z_edges, mesh_r_edges)
+    # 4. Create particles
+    # Pass max_particles explicitly
+    n_particles, particle_prop = imc_source_particles2D(
+        e_surf, n_surf, e_body, n_body, particle_prop, n_particles, 
+        current_time, dt, mesh_z_edges, mesh_r_edges, max_particles
+    )
 
-    # Final particle count in system
-    print("Number of particles in the system after sourcing = {:12d}".format(n_particles))
+    # 5. Final particle count in system
+    print("Number of particles in the system after sourcing =", n_particles)
 
     return n_particles, particle_prop
 

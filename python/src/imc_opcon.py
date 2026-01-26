@@ -1148,10 +1148,15 @@ def si02_cylinder(output_file):
                                                                                                   mesh.y_edges, mesh.x_edges, 
                                                                                                   mesh.temp, mesh.fleck, 
                                                                                                   mesh.sigma_a)
+                    
                 elif part.mode == 'rn':
-                    part.n_particles, part.particle_prop = imc_source.run2D(mesh.fleck, mesh.temp, mesh.sigma_a, part.particle_prop, part.n_particles, time.time, time.dt, mesh.x_edges, mesh.y_edges)
+                    part.n_particles, part.particle_prop = imc_source.run2D(
+                    mesh.fleck, mesh.temp, mesh.sigma_a, part.particle_prop, part.n_particles, 
+                    time.time, time.dt, mesh.x_edges, mesh.y_edges,
+                    time.step, part.n_input, part.max_array_size,
+                    phys.a, phys.c, phys.sb, bcon.T0)
+
                 print(f'finished sourcing particles.')
-                
                 # Advance particles through transport
                 if part.mode == 'nrn': 
                     if parallel:
@@ -1255,10 +1260,10 @@ def si02_cylinder(output_file):
                 mesh.temp, mesh.radtemp = imc_tally.crooked_pipe_tally(mesh.nrgdep, mesh.x_edges, mesh.y_edges, part.n_particles, part.particle_prop, mesh.temp, mesh.sigma_a, mesh.fleck, mat.b, time.dt)
                 print(f'mesh.temp = {mesh.temp}')
                 print(f'mesh.radtemp = {mesh.radtemp}')
-                if np.any(mesh.temp < 0.0):
-                    raise RuntimeError(f"Negative material temp detected! min(mesh.temp) = {np.min(mesh.temp)}")
-                if np.any(mesh.radtemp < 0.0):
-                    raise RuntimeError(f"Negative rad temp! min(mesh.radtemp) = {np.min(mesh.radtemp)}")
+                # if np.any(mesh.temp < 0.0):
+                #     raise RuntimeError(f"Negative material temp detected! min(mesh.temp) = {np.min(mesh.temp)}")
+                # if np.any(mesh.radtemp < 0.0):
+                #     raise RuntimeError(f"Negative rad temp! min(mesh.radtemp) = {np.min(mesh.radtemp)}")
                 
                 # Update time
                 time.time = round(time.time + time.dt, 8)

@@ -150,7 +150,7 @@ def general_tally(nrgdep, n_particles, particle_prop, temp):
 
     return temp, radtemp
 
-
+@njit
 def crooked_pipe_tally(nrgdep, 
                        mesh_z_edges, mesh_r_edges, 
                        n_particles, particle_prop, 
