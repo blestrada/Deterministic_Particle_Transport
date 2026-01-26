@@ -1133,7 +1133,7 @@ def si02_cylinder(output_file):
                 print(f"time.dt = {time.dt}")
 
                 # Update temperature dependent quantities
-                mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mat.b = imc_update.si02_update(mesh.temp, mat.rho, time.dt)
+                mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mat.b = imc_update.si02_update(mesh.temp, mat.rho, time.dt, phys.a, phys.c)
                 print(f'mesh.sigma_a = {mesh.sigma_a}')
                 print(f'mesh.fleck = {mesh.fleck}')
                 
