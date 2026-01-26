@@ -1266,18 +1266,14 @@ def si02_cylinder(output_file):
                 #     raise RuntimeError(f"Negative rad temp! min(mesh.radtemp) = {np.min(mesh.radtemp)}")
                 
                 # Update time
-                time.time = round(time.time + time.dt, 8)
-                time.step += 1
-                # Make a larger time-step
-                if time.dt < time.dt_max:
-                    # Increase time-step
-                    time.dt = time.dt * time.dt_rampfactor
-                    if time.dt > time.dt_max:
-                        time.dt = time.dt_max
-
-                # Check for final time-step
-                if time.time + time.dt > t_final:
-                    time.dt = t_final - time.time
+                time.time, time.dt, time.step = imc_update.ramping_time_step(
+                                                time.time, 
+                                                time.dt, 
+                                                time.dt_max, 
+                                                time.dt_rampfactor, 
+                                                t_final, 
+                                                time.step
+)
                 nx, ny = mesh.temp.shape
                 for j in range(ny):
                     for i in range(nx):

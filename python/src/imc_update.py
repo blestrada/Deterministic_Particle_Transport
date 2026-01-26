@@ -67,7 +67,7 @@ def crooked_pipe_update(mesh_sigma_a, temp, dt):
     print(f'fleck = {fleck}')
     return fleck
 
-
+@njit
 def si02_update(temp, rho, dt, phys_a, phys_c):
     # Calculate heat capacity
     c_v = 0.1448 * 1.1 * (temp ** 0.1) 
@@ -97,6 +97,29 @@ def si02_update(temp, rho, dt, phys_a, phys_c):
 
     return sigma_a, sigma_s, sigma_t, fleck, mat_b
 
+@njit
+def ramping_time_step(current_time, dt, dt_max, dt_rampfactor, t_final, step):
+    """
+    Updates the simulation time and scales the time-step.
+    Numba-compatible version.
+    """
+    # 1. Update time and step count
+    # Note: np.round is used as it is supported by Numba
+    new_time = np.round(current_time + dt, 8)
+    new_step = step + 1
+
+    # 2. Scale the time-step (Ramping logic)
+    new_dt = dt
+    if new_dt < dt_max:
+        new_dt = new_dt * dt_rampfactor
+        if new_dt > dt_max:
+            new_dt = dt_max
+
+    # 3. Check for final time-step truncation
+    if new_time + new_dt > t_final:
+        new_dt = t_final - new_time
+        
+    return new_time, new_dt, new_step
 
 @njit
 def population_control(n_particles, particle_prop, current_time, Nmu):
