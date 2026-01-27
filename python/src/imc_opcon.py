@@ -1233,7 +1233,7 @@ def si02_cylinder(output_file):
                         #     time.time, time.dt,
                         #     mesh.sigma_a, mesh.sigma_s, mesh.fleck,
                         #     mesh.x_edges, mesh.y_edges
-                        #     )
+                            # )
                 elif part.mode == 'rn':
                     if parallel:
                         mesh.nrgdep = imc_track.run_crooked_pipe_loop_RN(
@@ -1304,7 +1304,7 @@ def si02_cylinder(output_file):
             plt.figure()
             pc = plt.pcolormesh(mesh.x_edges, mesh.y_edges, mesh.temp.T, cmap="inferno", shading="flat")
             plt.colorbar(pc, label="Temperature [keV]")
-            # plt.clim(vmin=0.01, vmax=bcon.T0)  # Adjust vmin to be > 0 for log scale
+            plt.clim(vmin=0.00, vmax=bcon.T0)
             plt.xlabel("z")
             plt.ylabel("r")
             plt.xlim(mesh.x_edges[0], mesh.x_edges[-1])

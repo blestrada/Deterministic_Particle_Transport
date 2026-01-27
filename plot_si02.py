@@ -63,7 +63,7 @@ pc = plt.pcolormesh(z_edges,
                     full_r_edges, 
                     combined_data.T, 
                     cmap="jet", 
-                    shading='flat=')
+                    shading='flat')
 plt.colorbar(pc, label="Temperature [keV]")
 plt.clim(vmin=2.419e-05, vmax=0.139)
 plt.xlabel("Z (cm)")
@@ -89,7 +89,7 @@ for zi, ri in axis_pairs:
     # Plot Material Temp (solid line) and Rad Temp (dashed)
     z_val = z_edges[zi]
     p = plt.plot(subset['time'], subset['temp'], label=f"Tmat z={z_val:.3f}")
-    plt.plot(subset['time'], subset['radtemp'], color=p[0].get_color(), linestyle='--')
+    # plt.plot(subset['time'], subset['radtemp'], color=p[0].get_color(), linestyle='--')
 
 plt.xlabel("Time (sh)")
 plt.ylabel("T (keV)")

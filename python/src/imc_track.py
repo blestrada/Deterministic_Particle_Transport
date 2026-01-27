@@ -1507,7 +1507,7 @@ def generate_scattered_particles_no_distribution(
 
             # Space, angle, and time grids
             z_values = imc_source.deterministic_sample_z(mesh_z_edges[iz], mesh_z_edges[iz+1], ptcl_Nx[iz,ir])
-            r_values = imc_source.deterministic_sample_radius(mesh_r_edges[ir], mesh_r_edges[ir+1], ptcl_Ny[iz,ir])
+            r_values, r_weights = imc_source.weighted_sample_radius(mesh_r_edges[ir], mesh_r_edges[ir+1], ptcl_Ny[iz,ir])
             mu_values = imc_source.deterministic_sample_mu_isotropic(ptcl_Nmu[iz,ir])
             phi_values = imc_source.deterministic_sample_phi_isotropic(ptcl_N_phi[iz,ir])
             t_values = imc_source.deterministic_sample_z(current_time, current_time + dt, ptcl_Nt[iz,ir])
@@ -1520,12 +1520,13 @@ def generate_scattered_particles_no_distribution(
             # Create scattered particles
             for z in z_values:
                 for i_r, r in enumerate(r_values):
+                    weighted_nrg = base_nrg * r_weights[i_r]
                     for mu in mu_values:
                         for phi in phi_values:
                             for i_t, ttt in enumerate(t_values):
                                 if n_scattered_particles >= ptcl_max_array_size:
                                     raise RuntimeError("Maximum number of scattered particles reached")
-                                weighted_nrg = base_nrg
+                                
                                 idx = n_scattered_particles
                                 scattered_particles[idx, 0] = ttt   # emission time
                                 scattered_particles[idx, 1] = iz    # z cell index
