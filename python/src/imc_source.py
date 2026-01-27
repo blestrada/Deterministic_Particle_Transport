@@ -1248,8 +1248,8 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
     start_count = n_particles
     for iz in range(nz_cells):
         for ir in range(nr_cells):
-            # if mesh_temp[iz, ir] <= 0.05:
-            #     continue
+            if mesh_temp[iz, ir] <= 2.59E-5:
+                continue
             # Cell volume
             zone_volume = volumes[iz, ir]
 
