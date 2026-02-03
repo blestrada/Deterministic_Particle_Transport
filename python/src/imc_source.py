@@ -113,6 +113,30 @@ def deterministic_sample_mu_lambertian(n_samples) -> NDArray:
     """
     return np.sqrt(((np.arange(n_samples)) + 0.5) / n_samples)
 
+@njit
+def weighted_sample_mu_lambertian(n_samples: int) -> tuple[NDArray, NDArray]:
+    """
+    Uniformly sample mu and return weights based on the 
+    Lambertian (cosine) distribution PDF f(mu) = 2*mu.
+    """
+    # 1. Create uniformly spaced mu values
+    dmu = 1.0 / n_samples
+    # Centered points to avoid 0.0 or 1.0 boundary issues
+    mu_values = np.linspace(0.5 * dmu, 1.0 - 0.5 * dmu, n_samples)
+    
+    # 2. Calculate the weights
+    # The physical PDF is f(mu) = 2*mu
+    # The sampling PDF is g(mu) = 1 (uniform)
+    # Weight = f(mu) / g(mu)
+    weights = 2.0 * mu_values
+    
+    # Normalize weights so the mean is 1.0
+    # This ensures the total number of particles/intensity is preserved
+    weights = weights / np.mean(weights)
+    
+    return mu_values, weights
+
+
 @njit          
 def deterministic_sample_phi_isotropic(n_samples) -> NDArray:
     return (0.0 + (np.arange(n_samples) + 0.5)) * 2 * np.pi / n_samples
@@ -1076,7 +1100,7 @@ def crooked_pipe_surface_particles(T_surf, n_particles, particle_prop,
     print('Total energy emitted by the surface =', e_surf)
 
     # Generate radii
-    r_values = deterministic_sample_radius(0.0, surface_length, surface_Nr)
+    r_values, r_weights = weighted_sample_radius(0.0, surface_length, surface_Nr)
     # print(f'r_values = {r_values}')
 
     # Generate mu
@@ -1085,6 +1109,7 @@ def crooked_pipe_surface_particles(T_surf, n_particles, particle_prop,
 
     # Generate Phi
     phi_values = deterministic_sample_phi_isotropic(surface_N_phi)
+    # phi_values = np.array([0.0])
     # print(f'phi_values = {phi_values}')
 
     # Emission times evenly spaced over dt
@@ -1102,7 +1127,7 @@ def crooked_pipe_surface_particles(T_surf, n_particles, particle_prop,
 
     for i, r in enumerate(r_values):
         r_idx = np.searchsorted(mesh_r_edges, r) - 1        
-        weighted_nrg = base_nrg
+        weighted_nrg = base_nrg * r_weights[i]
         for mu in mu_values:
             for phi in phi_values:
                 for ttt in t_values:
@@ -1136,8 +1161,8 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
     start_count = n_particles
     for iz in range(nz_cells):
         for ir in range(nr_cells):
-            # if mesh_temp[iz, ir] <= 0.05:
-            #     continue
+            if mesh_temp[iz, ir] <= 2.59E-5:
+                continue
             # Cell volume
             zone_volume = volumes[iz, ir]
 

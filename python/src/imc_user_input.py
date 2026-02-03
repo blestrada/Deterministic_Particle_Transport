@@ -108,7 +108,7 @@ def read(input_file):
                 mesh.radtemp0 = float(keyv)
 
             elif keyw == "n_max":
-                part.n_max = int(keyv)
+                part.max_array_size = int(keyv)
                 
             elif keyw == 'mode':
                 part.mode = str(keyv)

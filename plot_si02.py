@@ -3,8 +3,55 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-# Load your CSV
-df_imc = pd.read_csv("si02_imc_0.4sh.csv")
+# Load IMC data
+with np.load("si02_results_IMC1e7_0.4sh.npz") as data:
+    time = data['time']
+    temp = data['temp'] # Assuming shape is (time, z_idx, r_idx)
+    radtemp = data['radtemp']
+    z_edges = data['z_edges']
+    r_edges = data['r_edges']
+
+# Calculate dimensions
+n_times, n_z, n_r = temp.shape
+
+# Create coordinate grids to match the CSV "long" format
+z_indices, r_indices = np.meshgrid(np.arange(n_z), np.arange(n_r), indexing='ij')
+
+# Repeat the indices for every time step
+df_imc = pd.DataFrame({
+    'time': np.repeat(time, n_z * n_r),
+    'x_idx': np.tile(z_indices.flatten(), n_times),
+    'y_idx': np.tile(r_indices.flatten(), n_times),
+    'temp': temp.flatten(),
+    'radtemp': radtemp.flatten()
+})
+
+# Load DPT data
+
+with np.load("si02_results.npz") as data:
+    time = data['time']
+    temp = data['temp'] # Assuming shape is (time, z_idx, r_idx)
+    radtemp = data['radtemp']
+    z_edges = data['z_edges']
+    r_edges = data['r_edges']
+
+# Calculate dimensions
+n_times, n_z, n_r = temp.shape
+
+# Create coordinate grids to match the CSV "long" format
+z_indices, r_indices = np.meshgrid(np.arange(n_z), np.arange(n_r), indexing='ij')
+
+# Repeat the indices for every time step
+df_dpt = pd.DataFrame({
+    'time': np.repeat(time, n_z * n_r),
+    'x_idx': np.tile(z_indices.flatten(), n_times),
+    'y_idx': np.tile(r_indices.flatten(), n_times),
+    'temp': temp.flatten(),
+    'radtemp': radtemp.flatten()
+})
+
+
+
 
 # Define the 10 points of interest
 epsilon = 5e-5
@@ -34,16 +81,21 @@ for i, pair in enumerate(point_indices):
 
 # Get the material and rad temp at end of simulation
 # User-specified time (pick the closest one available)
-available_times = df_imc['time'].unique()
-target_time = available_times[-501] # -1 for final, -501 for 0.35 sh
-
+dpt_available_times = df_dpt['time'].unique()
+imc_available_times = df_imc['time'].unique()
+target_time_dpt = dpt_available_times[-1] # -1 for final, -501 for 0.35 sh
+target_time_imc = imc_available_times[-1]
 # 1. Filter the dataframe for that specific time
-df_step = df_imc[df_imc['time'] == target_time]
+df_step_dpt = df_dpt[df_dpt['time'] == target_time_dpt]
+df_step_imc = df_imc[df_imc['time'] == target_time_imc]
 
 # 2. Reshape the data back into a 2D grid
 # We use pivot to organize x_idx as rows and y_idx as columns
-temp_grid = df_step.pivot(index='x_idx', columns='y_idx', values='temp').values
-radtemp_grid = df_step.pivot(index='x_idx', columns='y_idx', values='radtemp').values
+dpt_temp_grid = df_step_dpt.pivot(index='x_idx', columns='y_idx', values='temp').values
+dpt_radtemp_grid = df_step_dpt.pivot(index='x_idx', columns='y_idx', values='radtemp').values 
+
+imc_temp_grid = df_step_imc.pivot_table(index='x_idx', columns='y_idx', values='temp', aggfunc='mean').values
+imc_radtemp_grid = df_step_imc.pivot_table(index='x_idx', columns='y_idx', values='radtemp', aggfunc='mean').values
 
 
 full_r_edges = np.concatenate([-r_edges[::-1], r_edges[1:]])
@@ -51,19 +103,22 @@ full_r_edges = np.concatenate([-r_edges[::-1], r_edges[1:]])
 # 2. Prepare the data
 # Flip the radiation grid vertically so the "center" (index 0) stays at R=0
 # and the "outer edge" moves toward R = -0.08
-rad_half = np.flip(radtemp_grid, axis=1) 
-mat_half = temp_grid
+dpt_rad_half = np.flip(dpt_radtemp_grid, axis=1) 
+dpt_mat_half = dpt_temp_grid
 
+imc_rad_half = np.flip(imc_radtemp_grid, axis=1)
+imc_mat_half = imc_temp_grid
 # 3. Stack them: Radiation on bottom (negative R), Material on top (positive R)
 # Stack along the radial axis (axis 1)
-combined_data = np.hstack([rad_half, mat_half])
+dpt_combined_data = np.hstack([dpt_rad_half, dpt_mat_half])
+imc_combined_data = np.hstack([imc_rad_half, imc_mat_half])
 
 plt.figure()
 pc = plt.pcolormesh(z_edges, 
                     full_r_edges, 
-                    combined_data.T, 
+                    dpt_combined_data.T, 
                     cmap="jet", 
-                    shading='flat=')
+                    shading='flat')
 plt.colorbar(pc, label="Temperature [keV]")
 plt.clim(vmin=2.419e-05, vmax=0.139)
 plt.xlabel("Z (cm)")
@@ -71,9 +126,27 @@ plt.ylabel("R (cm)")
 plt.xlim(z_edges[0], z_edges[-1])
 plt.ylim(full_r_edges[0], full_r_edges[-1])
 plt.axis('scaled')
-plt.title(f"Temperature at t={target_time}")
+plt.title(f"Temperature at t={target_time_dpt}")
 
-plt.savefig('si02_temp.png',dpi=900)
+plt.savefig('si02_dpt.png',dpi=900)
+plt.show()
+
+plt.figure()
+pc = plt.pcolormesh(z_edges, 
+                    full_r_edges, 
+                    imc_combined_data.T, 
+                    cmap="jet", 
+                    shading='flat')
+plt.colorbar(pc, label="Temperature [keV]")
+plt.clim(vmin=2.419e-05, vmax=0.139)
+plt.xlabel("Z (cm)")
+plt.ylabel("R (cm)")
+plt.xlim(z_edges[0], z_edges[-1])
+plt.ylim(full_r_edges[0], full_r_edges[-1])
+plt.axis('scaled')
+plt.title(f"Temperature at t={target_time_imc}")
+
+plt.savefig('si02_imc.png',dpi=900)
 plt.show()
 
 # Plot Fiducial Points
@@ -82,14 +155,23 @@ axis_pairs = [(zi, r_indices[0]) for zi in z_indices]
 edge_pairs = [(zi, r_indices[1]) for zi in z_indices]
 
 plt.figure()
-for zi, ri in axis_pairs:
-    # Filter dataframe for this specific spatial cell
-    subset = df_imc[(df_imc['x_idx'] == zi) & (df_imc['y_idx'] == ri)]
+for i, (zi, ri) in enumerate(axis_pairs):
+    dpt_subset = df_dpt[(df_dpt['x_idx'] == zi) & (df_dpt['y_idx'] == ri)]
+    imc_subset = df_imc[(df_imc['x_idx'] == zi) & (df_imc['y_idx'] == ri)]
     
-    # Plot Material Temp (solid line) and Rad Temp (dashed)
-    z_val = z_edges[zi]
-    p = plt.plot(subset['time'], subset['temp'], label=f"Tmat z={z_val:.3f}")
-    plt.plot(subset['time'], subset['radtemp'], color=p[0].get_color(), linestyle='--')
+    # Define labels only for the first iteration (index 0)
+    d_label_Te = "Te DPT" if i == 0 else None
+    d_label_Tr = "Tr DPT" if i == 0 else None
+    i_label_Te = "Te IMC" if i == 0 else None
+    i_label_Tr = "Tr IMC" if i == 0 else None
+
+    # Plot IMC Te and Tr
+    plt.plot(imc_subset['time'], imc_subset['temp'], color='red', label=i_label_Te)
+    # plt.plot(imc_subset['time'], imc_subset['radtemp'], color='blue', label=i_label_Tr)
+
+    # Plot DPT Te and Tr
+    plt.plot(dpt_subset['time'], dpt_subset['temp'], color='red', linestyle='dotted', label=d_label_Te)
+    # plt.plot(dpt_subset['time'], dpt_subset['radtemp'], color='blue', linestyle='dotted', label=d_label_Tr)
 
 plt.xlabel("Time (sh)")
 plt.ylabel("T (keV)")
@@ -103,12 +185,24 @@ plt.savefig('sio2_axis.png', dpi=900)
 plt.show()
 
 plt.figure()
-for zi, ri in edge_pairs:
-    subset = df_imc[(df_imc['x_idx'] == zi) & (df_imc['y_idx'] == ri)]
+for i, (zi, ri) in enumerate(edge_pairs):
+    dpt_subset = df_dpt[(df_dpt['x_idx'] == zi) & (df_dpt['y_idx'] == ri)]
+    imc_subset = df_imc[(df_imc['x_idx'] == zi) & (df_imc['y_idx'] == ri)]
     
-    z_val = z_edges[zi]
-    p = plt.plot(subset['time'], subset['temp'], label=f"Tmat z={z_val:.3f}")
-    plt.plot(subset['time'], subset['radtemp'], color=p[0].get_color(), linestyle='--')
+    # Define labels only for the first iteration (index 0)
+    d_label_Te = "Te DPT" if i == 0 else None
+    d_label_Tr = "Tr DPT" if i == 0 else None
+    i_label_Te = "Te IMC" if i == 0 else None
+    i_label_Tr = "Tr IMC" if i == 0 else None
+
+    # Plot IMC Te and Tr
+    plt.plot(imc_subset['time'], imc_subset['temp'], color='red', label=i_label_Te)
+    # plt.plot(imc_subset['time'], imc_subset['radtemp'], color='blue', label=i_label_Tr)
+
+    # Plot DPT Te and Tr
+    plt.plot(dpt_subset['time'], dpt_subset['temp'], color='red', linestyle='dotted', label=d_label_Te)
+    # plt.plot(dpt_subset['time'], dpt_subset['radtemp'], color='blue', linestyle='dotted', label=d_label_Tr)
+    
 
 plt.xlabel("Time (sh)")
 plt.ylabel("T (keV)")
@@ -120,4 +214,3 @@ plt.title("Temperature at Pipe Edge (R=0.08)")
 plt.tight_layout()
 plt.savefig('sio2_edge.png', dpi=900)
 plt.show()
-

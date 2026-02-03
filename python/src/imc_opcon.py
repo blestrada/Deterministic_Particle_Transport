@@ -1088,7 +1088,6 @@ def si02_cylinder(output_file):
         part.Nt = np.full((num_x_idx, num_y_idx), part.Nt)
 
     # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
-    part.max_array_size = 200_000_000
     part.particle_prop = np.zeros((part.max_array_size, 10), dtype=np.float64)
     part.n_particles = 0
 
@@ -1124,7 +1123,13 @@ def si02_cylinder(output_file):
     print(f"System max threads: {numba.config.NUMBA_DEFAULT_NUM_THREADS}")
 
     # Loop over timesteps
-    records = []
+    # Loop over timesteps
+    max_steps = 5000 
+    # Use float32 to save memory; mesh.temp.shape is (Nx, Ny)
+    nx, ny = mesh.temp.shape
+    temp_history = np.zeros((max_steps, nx, ny), dtype=np.float32)
+    radtemp_history = np.zeros((max_steps, nx, ny), dtype=np.float32)
+    time_history = np.zeros(max_steps, dtype=np.float32)
     try:
         with open(output_file, "wb") as fname:
             while time.time < t_final:
@@ -1133,7 +1138,7 @@ def si02_cylinder(output_file):
                 print(f"time.dt = {time.dt}")
 
                 # Update temperature dependent quantities
-                mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mat.b = imc_update.si02_update(mesh.temp, mat.rho, time.dt)
+                mesh.sigma_a, mesh.sigma_s, mesh.sigma_t, mesh.fleck, mat.b = imc_update.si02_update(mesh.temp, mat.rho, time.dt, phys.a, phys.c)
                 print(f'mesh.sigma_a = {mesh.sigma_a}')
                 print(f'mesh.fleck = {mesh.fleck}')
                 
@@ -1260,44 +1265,42 @@ def si02_cylinder(output_file):
                 if np.any(mesh.radtemp < 0.0):
                     raise RuntimeError(f"Negative rad temp! min(mesh.radtemp) = {np.min(mesh.radtemp)}")
                 
+                if time.step < max_steps:
+                    time_history[time.step] = time.time
+                    temp_history[time.step, :, :] = mesh.temp
+                    radtemp_history[time.step, :, :] = mesh.radtemp
                 # Update time
-                time.time = round(time.time + time.dt, 8)
-                time.step += 1
-                # Make a larger time-step
-                if time.dt < time.dt_max:
-                    # Increase time-step
-                    time.dt = time.dt * time.dt_rampfactor
-                    if time.dt > time.dt_max:
-                        time.dt = time.dt_max
-
-                # Check for final time-step
-                if time.time + time.dt > t_final:
-                    time.dt = t_final - time.time
-                nx, ny = mesh.temp.shape
-                for j in range(ny):
-                    for i in range(nx):
-                        records.append({
-                            "time": time.time,
-                            "x_idx": i,
-                            "y_idx": j,
-                            "temp": mesh.temp[i, j],
-                            "radtemp": mesh.radtemp[i, j]
-                        })
+                time.time, time.dt, time.step = imc_update.ramping_time_step(
+                                                time.time, 
+                                                time.dt, 
+                                                time.dt_max, 
+                                                time.dt_rampfactor, 
+                                                t_final, 
+                                                time.step)
             
     except KeyboardInterrupt:
         print()
     finally:
-        if records:
-            print("Saving data collected so far...")
-            df = pd.DataFrame(records)
-            df.to_csv("si02_temperature_history.csv", index=False)
-            print(f"Temperature history saved ({time.step} steps total)")
-        # Generate the plots even on failure/interrupt
+        # --- 3. FINAL DATA DUMP ---
+        # Trim the pre-allocated arrays to the actual steps taken
+        actual_steps = time.step
+        if actual_steps > 0:
+            print(f"Saving {actual_steps} steps of full-mesh data...")
+            # Save as binary (NPZ) - much faster and smaller than CSV for full meshes
+            np.savez_compressed(
+                "si02_results.npz",
+                time=time_history[:actual_steps],
+                temp=temp_history[:actual_steps],
+                radtemp=radtemp_history[:actual_steps],
+                z_edges=mesh.x_edges,
+                r_edges=mesh.y_edges
+            )
+            print("Data saved to si02_results.npz")
         try:
             plt.figure()
             pc = plt.pcolormesh(mesh.x_edges, mesh.y_edges, mesh.temp.T, cmap="inferno", shading="flat")
             plt.colorbar(pc, label="Temperature [keV]")
-            # plt.clim(vmin=0.01, vmax=bcon.T0)  # Adjust vmin to be > 0 for log scale
+            plt.clim(vmin=0.01, vmax=0.1390)
             plt.xlabel("z")
             plt.ylabel("r")
             plt.xlim(mesh.x_edges[0], mesh.x_edges[-1])
@@ -1310,7 +1313,7 @@ def si02_cylinder(output_file):
             plt.figure()
             pc = plt.pcolormesh(mesh.x_edges, mesh.y_edges, mesh.radtemp.T, cmap='inferno', shading='flat')        
             plt.colorbar(pc, label=f'Radiation Temp [keV]')
-            plt.clim(vmin=0.00, vmax=bcon.T0)
+            plt.clim(vmin=0.00, vmax=0.1390)
             plt.xlabel("z")
             plt.ylabel("r")
             plt.xlim(mesh.x_edges[0], mesh.x_edges[-1])

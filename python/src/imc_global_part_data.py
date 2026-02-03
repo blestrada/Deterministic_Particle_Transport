@@ -14,7 +14,6 @@ surface_Nt = None
 
 # Number of particles added per timestep (RN)
 n_input = -1
-n_max = -1
 n_census = -1
 
 # Global list of particle properties
