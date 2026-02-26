@@ -33,7 +33,7 @@ def SuOlson_tally(nrgdep, n_particles, particle_prop, matnrgdens, temp):
     # Calculate end-of-step radiation energy density
     radnrgdens = np.zeros(mesh.ncells)
 
-    for i in range(n_particles[0]):
+    for i in range(n_particles):
         particle = particle_prop[i]  
         nrg = particle[6]
         if nrg >= 0.0:
@@ -45,7 +45,43 @@ def SuOlson_tally(nrgdep, n_particles, particle_prop, matnrgdens, temp):
         print(f'Radiation Energy Density = {radnrgdens[:10]}')
         print(f'Temperature = {temp[:10]}')
     return matnrgdens, radnrgdens, temp
+
+def SuOlson_tally_RZ(nrgdep, n_particles, particle_prop, matnrgdens, temp):
+    """Tally end of timestep quantities """
     
+    dz = np.diff(mesh.x_edges)
+    dr2 = np.diff(mesh.y_edges**2)
+    vols = np.pi * np.outer(dz, dr2)
+    
+    # print(f'vols = {vols}')
+    # Temperature increase
+    nrg_inc = (nrgdep / vols) - (phys.a * temp ** 4 * mesh.sigma_a * mesh.fleck * phys.c * time.dt)
+
+    # print(f'nrg_inc = {nrg_inc[:10]}')
+    matnrgdens += nrg_inc
+    matnrgdens[matnrgdens < 0] = 0.0
+        
+    # Calculate new temperature
+    temp = matnrgdens ** (1/4)
+
+    # Calculate end-of-step radiation energy density
+    radnrgdens = np.zeros_like(nrgdep)
+
+    for i in range(n_particles):
+        particle = particle_prop[i]  
+        nrg = particle[8]
+        if nrg >= 0.0:
+            iz = int(particle[1])  
+            ir = int(particle[2])
+            radnrgdens[iz,ir] += nrg / vols[iz,ir]  # Update the energy density in the corresponding cell
+
+    with objmode:
+        print(f'Material Energy Density = {matnrgdens[:5]}')
+        print(f'Radiation Energy Density = {radnrgdens[:5]}')
+        print(f'Temperature = {temp[:5]}')
+
+    
+    return matnrgdens, radnrgdens, temp
 
 @njit
 def marshak_wave_tally(nrgdep, n_particles, particle_prop, matnrgdens, temp, sigma_a, fleck, dt):

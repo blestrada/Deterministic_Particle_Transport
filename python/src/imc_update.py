@@ -23,6 +23,15 @@ def SuOlson_update(temp):
     return b
 
 @njit
+def SuOlson_update_RZ(alpha, temp):
+    """Update temperature-dependent quantities at start of time-step"""
+
+    # Calculate new heat capacity
+    b = alpha * temp ** 3
+    print("heat capacity =", b[:10])
+    return b
+
+@njit
 def marshak_wave_update(temp, dt):
     """Update temperature-dependent quantities at start of time-step"""
     # Calculate beta
@@ -119,6 +128,23 @@ def ramping_time_step(current_time, dt, dt_max, dt_rampfactor, t_final, step):
 
     # 3. Check for final time-step truncation
     if new_time + new_dt > t_final:
+        new_dt = t_final - new_time
+        
+    return new_time, new_dt, new_step
+
+@njit
+def constant_time_step(current_time, dt, t_final, step):
+    """
+    Updates the simulation time and the time-step.
+    Numba-compatible version.
+    """
+    # 1. Update time and step count
+    # Note: np.round is used as it is supported by Numba
+    new_time = np.round(current_time + dt, 8)
+    new_step = step + 1
+    new_dt = dt
+    # 3. Check for final time-step truncation
+    if new_time > t_final:
         new_dt = t_final - new_time
         
     return new_time, new_dt, new_step

@@ -136,6 +136,15 @@ def read(input_file):
 
             elif keyw == 'n_threads':
                 threads.n_threads = int(keyv)
+
+            elif keyw == 'z_min_bc':
+                mesh.z_min_bc = int(keyv)
+
+            elif keyw == 'z_max_bc':
+                mesh.z_max_bc = int(keyv)
+
+            elif keyw == 'r_max_bc':
+                mesh.r_max_bc = int(keyv)
             else:
                 continue
 

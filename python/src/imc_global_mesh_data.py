@@ -40,3 +40,8 @@ nodepos = -1.0
 # Boundary conditions (reflecting or vacuum)
 left_bc = None
 right_bc = None
+
+# RZ
+z_min_bc = None
+z_max_bc = None
+r_max_bc = None

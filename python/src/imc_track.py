@@ -1163,7 +1163,8 @@ def track_single_particle(
     iptcl, particle_prop, mesh_z_edges, mesh_r_edges, 
     mesh_sigma_a, mesh_sigma_s, mesh_sigma_t, mesh_fleck, 
     phys_c, phys_invc, endsteptime,
-    tid, priv_dep, priv_scat, priv_xEs, priv_yEs, priv_tEs
+    tid, priv_dep, priv_scat, priv_xEs, priv_yEs, priv_tEs,
+    z_min_bc, z_max_bc, r_max_bc
 ):
     # Get Particle Parameters
     ttt = particle_prop[iptcl, 0]
@@ -1253,7 +1254,8 @@ def track_single_particle(
             r_cell_idx, z_cell_idx, mu, phi, alive = treat_boundary_RZ(
                 mu, phi, r_cell_idx, z_cell_idx, 
                 len(mesh_r_edges)-1, len(mesh_z_edges)-1,
-                dist_b, d_z, d_rmin, d_rmax
+                dist_b, d_z, d_rmin, d_rmax,
+                z_min_bc, z_max_bc, r_max_bc
             )
             
             if not alive:
@@ -1283,6 +1285,7 @@ def track_single_particle(
 def run_crooked_pipe_firstloop(n_particles, particle_prop, current_time, dt,
                                mesh_sigma_a, mesh_sigma_s, mesh_sigma_t,
                                mesh_fleck, mesh_z_edges, mesh_r_edges,
+                               z_min_bc, z_max_bc, r_max_bc
                                ):
     num_z_cells = len(mesh_z_edges) - 1
     num_r_cells = len(mesh_r_edges) - 1
@@ -1318,7 +1321,8 @@ def run_crooked_pipe_firstloop(n_particles, particle_prop, current_time, dt,
             iptcl, particle_prop, mesh_z_edges, mesh_r_edges, 
             mesh_sigma_a, mesh_sigma_s, mesh_sigma_t, mesh_fleck, 
             phys_c, phys_invc, endsteptime,
-            tid, priv_dep, priv_scat, priv_xEs, priv_yEs, priv_tEs
+            tid, priv_dep, priv_scat, priv_xEs, priv_yEs, priv_tEs,
+            z_min_bc, z_max_bc, r_max_bc
         )
 
     # --- Reduction step ---
@@ -1507,7 +1511,7 @@ def generate_scattered_particles_no_distribution(
 
             # Space, angle, and time grids
             z_values = imc_source.deterministic_sample_z(mesh_z_edges[iz], mesh_z_edges[iz+1], ptcl_Nx[iz,ir])
-            r_values = imc_source.deterministic_sample_radius(mesh_r_edges[ir], mesh_r_edges[ir+1], ptcl_Ny[iz,ir])
+            r_values,r_weights = imc_source.weighted_sample_radius(mesh_r_edges[ir], mesh_r_edges[ir+1], ptcl_Ny[iz,ir])
             mu_values = imc_source.deterministic_sample_mu_isotropic(ptcl_Nmu[iz,ir])
             phi_values = imc_source.deterministic_sample_phi_isotropic(ptcl_N_phi[iz,ir])
             t_values = imc_source.deterministic_sample_z(current_time, current_time + dt, ptcl_Nt[iz,ir])
@@ -1525,7 +1529,7 @@ def generate_scattered_particles_no_distribution(
                             for i_t, ttt in enumerate(t_values):
                                 if n_scattered_particles >= ptcl_max_array_size:
                                     raise RuntimeError("Maximum number of scattered particles reached")
-                                weighted_nrg = base_nrg
+                                weighted_nrg = base_nrg * r_weights[i_r]
                                 idx = n_scattered_particles
                                 scattered_particles[idx, 0] = ttt   # emission time
                                 scattered_particles[idx, 1] = iz    # z cell index
@@ -1548,7 +1552,8 @@ def generate_scattered_particles_no_distribution(
 def track_single_particle_RN(iptcl, particle_prop, mesh_z_edges, mesh_r_edges,
                              mesh_sigma_a, mesh_sigma_s, mesh_fleck,
                              phys_c, phys_invc, endsteptime,
-                             tid, priv_dep
+                             tid, priv_dep,
+                             z_min_bc, z_max_bc, r_max_bc
 ):
     # Get Particle Parameters
     ttt = particle_prop[iptcl, 0]
@@ -1593,7 +1598,7 @@ def track_single_particle_RN(iptcl, particle_prop, mesh_z_edges, mesh_r_edges,
         newnrg = nrg * np.exp(-mesh_sigma_a[z_cell_idx, r_cell_idx] * mesh_fleck[z_cell_idx, r_cell_idx] * dist)
         newnrg = max(newnrg, 0.0)
         nrg_change = nrg - newnrg
-
+        
         # Update private tallies
         priv_dep[tid, z_cell_idx, r_cell_idx] += nrg_change
 
@@ -1607,11 +1612,11 @@ def track_single_particle_RN(iptcl, particle_prop, mesh_z_edges, mesh_r_edges,
         nrg = newnrg
 
         # --- THRESHOLD CHECK ---
-        if nrg < 0.001 * startnrg:
-            priv_dep[tid, z_cell_idx, r_cell_idx] += nrg  # Deposit remaining energy
-            particle_prop[iptcl, 8] = -1.0               # Mark as dead
-            history_continues = False
-            continue # Exit loop for this particle
+        # if nrg < 0.001 * startnrg:
+        #     priv_dep[tid, z_cell_idx, r_cell_idx] += nrg  # Deposit remaining energy
+        #     particle_prop[iptcl, 8] = -1.0               # Mark as dead
+        #     history_continues = False
+        #     continue # Exit loop for this particle
         # --------------------------------------
 
         # Event Handling
@@ -1620,7 +1625,8 @@ def track_single_particle_RN(iptcl, particle_prop, mesh_z_edges, mesh_r_edges,
             r_cell_idx, z_cell_idx, mu, phi, alive = treat_boundary_RZ(
                 mu, phi, r_cell_idx, z_cell_idx, 
                 len(mesh_r_edges)-1, len(mesh_z_edges)-1,
-                dist_b, d_z, d_rmin, d_rmax
+                dist_b, d_z, d_rmin, d_rmax,
+                z_min_bc, z_max_bc, r_max_bc
             )
             
             if not alive:
@@ -1655,7 +1661,8 @@ def track_single_particle_RN(iptcl, particle_prop, mesh_z_edges, mesh_r_edges,
 @njit(parallel=True)
 def run_crooked_pipe_loop_RN(n_particles, particle_prop, current_time, dt,
                              mesh_sigma_a, mesh_sigma_s, mesh_fleck,
-                             mesh_z_edges, mesh_r_edges):
+                             mesh_z_edges, mesh_r_edges,
+                             z_min_bc, z_max_bc, r_max_bc):
     
     num_z_cells = len(mesh_z_edges) - 1
     num_r_cells = len(mesh_r_edges) - 1
@@ -1681,7 +1688,8 @@ def run_crooked_pipe_loop_RN(n_particles, particle_prop, current_time, dt,
             iptcl, particle_prop, mesh_z_edges, mesh_r_edges,
             mesh_sigma_a, mesh_sigma_s, mesh_fleck,
             phys_c, phys_invc, endsteptime,
-            tid, priv_dep
+            tid, priv_dep,
+            z_min_bc, z_max_bc, r_max_bc
         )
     
     # --- Reduction step ---
@@ -1754,8 +1762,8 @@ def clean2D(n_particles, particle_prop, energy_col=8):
     n_particles = valid_index
 
     # Debug print (Numba-safe)
-    # print("Number of particles removed =", n_to_remove)
-    # print("Number of particles remaining =", n_particles)
+    print("Number of particles removed =", n_to_remove)
+    print("Number of particles remaining =", n_particles)
 
     return n_particles, particle_prop
 
@@ -2130,65 +2138,80 @@ def get_distance_to_nearest_boundary(r, z, mu, phi, r_min, r_max, z_min, z_max):
 
 @njit
 def move_particle_RZ(r, z, phi, mu, d):
-    """
-    Moves a particle a distance d and updates R, Z, and Phi.
-    """
-    sin_theta = np.sqrt(1.0 - mu**2)
+    sin_theta = np.sqrt(max(0.0, 1.0 - mu**2))
     projection_xy = d * sin_theta
     
-    # 1. Update Z (Linear)
+    # 1. Update Z
     z_new = z + d * mu
     
     # 2. Update R (Law of Cosines)
-    # r_new^2 = r^2 + dist_xy^2 + 2 * r * dist_xy * cos(phi)
+    # Using the angle relative to the radial vector
     r_new_sq = r**2 + projection_xy**2 + 2 * r * projection_xy * np.cos(phi)
-    r_new = np.sqrt(max(0, r_new_sq)) # max(0) handles tiny precision errors
+    r_new = np.sqrt(max(0, r_new_sq))
     
-    # 3. Update Phi (Change of local basis)
-    if r_new > 0:
+    # 3. Update Phi (Local angle relative to the new radial vector)
+    if r_new > 1e-14:
+        # Law of Sines/Cosines for new internal angle
         cos_phi_new = (r * np.cos(phi) + projection_xy) / r_new
-        # Clamp value to [-1, 1] for safety before acos
         cos_phi_new = max(-1.0, min(1.0, cos_phi_new))
-        phi_new = np.acos(cos_phi_new)
+        
+        # Preserve the 'sign' of rotation
+        if phi < 0:
+            phi_new = -np.acos(cos_phi_new)
+        else:
+            phi_new = np.acos(cos_phi_new)
     else:
-        # If we hit the exact center, phi is technically undefined; 
-        # usually preserved or reset to 0.
+        # At the exact center, r=0, we can preserve phi or set to 0
         phi_new = phi
         
     return r_new, z_new, phi_new
 
 @njit
-def treat_boundary_RZ(mu, phi, r_idx, z_idx, 
-                      Nr, Nz, dist_b, d_z, d_rmin, d_rmax):
+def treat_boundary_RZ(mu, phi, r_idx, z_idx, Nr, Nz, dist_b, d_z, d_rmin, d_rmax,
+                      ref_zmin, ref_zmax, ref_rmax):
     """
-    Logic for crossing cell faces or reflecting.
+    Logic for crossing cell faces with optional reflection.
+    ref_flags: True for reflecting, False for vacuum.
     """
     alive = True
     
-    # Check Axial Faces
+    # --- Check Axial Faces (Z) ---
     if dist_b == d_z:
-        if mu > 0:
-            z_idx += 1
-            if z_idx >= Nz:
-                alive = False # Vacuum at Zmax
-        else:
-            z_idx -= 1
-            if z_idx < 0:
-                # Vacuum at z=0
-                alive = False
+        if mu > 0:  # Moving toward Z-max
+            if z_idx + 1 >= Nz:
+                if ref_zmax:
+                    mu = -mu  # Reflect: flip axial direction
+                else:
+                    alive = False
+            else:
+                z_idx += 1
+        else:  # Moving toward Z-min
+            if z_idx - 1 < 0:
+                if ref_zmin:
+                    mu = -mu  # Reflect: flip axial direction
+                else:
+                    alive = False
+            else:
+                z_idx -= 1
                 
-    # Check Radial Faces
+    # --- Check Radial Faces (R) ---
     elif dist_b == d_rmax:
-        r_idx += 1
-        if r_idx >= Nr: alive = False # Vacuum Outer
+        if r_idx + 1 >= Nr:
+            if ref_rmax:
+                # Reflecting at R-max: Flip phi to point back inward
+                # (Assuming standard cylindrical geometry logic)
+                phi = np.pi - phi
+            else:
+                alive = False
+        else:
+            r_idx += 1
         
     elif dist_b == d_rmin:
+        # Hitting Centerline (r=0) is physically always reflective
         r_idx -= 1
         if r_idx < 0:
-            # Hitting Centerline (r=0)
-            # Naturally reflective: change phi to point outward
             r_idx = 0
-            phi = phi + np.pi 
+            phi = np.pi - phi
             
     return r_idx, z_idx, mu, phi, alive
 
