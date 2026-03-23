@@ -1070,6 +1070,7 @@ def si02_cylinder(output_file):
     phys.invc = 1.0 / phys.c
     print(f'Physical constants: phys.c = {phys.c} [cm/sh], phys.a = {phys.a} [jk/(cm^3-keV^4)], phys.sb = {phys.sb} [jk/(cm2 − sh −keV4)]')
     
+    mesh.y_edges += 0.005
     print(f'mesh.dz = {mesh.dx}')
     print(f'mesh.dr = {mesh.dy}')
     # Initialize opacities, temperatures, fleck factor
@@ -1088,9 +1089,12 @@ def si02_cylinder(output_file):
     # Convert sourcing info into arrays
     if part.mode == 'nrn':
         part.Nmu = np.full((num_x_idx, num_y_idx), part.Nmu)
+        # part.Nmu[:, 0:2] = 50
         part.N_omega = np.full((num_x_idx, num_y_idx), part.N_omega)
+        # part.N_omega[:, 0:2] = 20
         part.Nx = np.full((num_x_idx, num_y_idx), part.Nx)
         part.Ny = np.full((num_x_idx, num_y_idx), part.Ny)
+        # part.Ny[:, 0:2] = 20
         part.Nt = np.full((num_x_idx, num_y_idx), part.Nt)
 
     # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
@@ -1101,7 +1105,7 @@ def si02_cylinder(output_file):
     time.time = 0.0
     time.dt = 1.0e-6    # shakes
     time.dt_max = 1.0e-4  # shakes
-    t_final = 0.4
+    t_final = 0.1
     time.dt_rampfactor = 1.05
 
     bcon.T0 = 0.15 # keV
@@ -1129,9 +1133,7 @@ def si02_cylinder(output_file):
     print(f"System max threads: {numba.config.NUMBA_DEFAULT_NUM_THREADS}")
 
     # Loop over timesteps
-    # Loop over timesteps
-    max_steps = 5000 
-    # Use float32 to save memory; mesh.temp.shape is (Nx, Ny)
+    max_steps = 2000 
     nx, ny = mesh.temp.shape
     temp_history = np.zeros((max_steps, nx, ny), dtype=np.float32)
     radtemp_history = np.zeros((max_steps, nx, ny), dtype=np.float32)
@@ -1153,7 +1155,7 @@ def si02_cylinder(output_file):
                                                                                                      part.surface_Ny, part.surface_Nmu, 
                                                                                                      part.surface_N_omega, part.surface_Nt, 
                                                                                                      time.time, time.dt, mesh.y_edges)
-                    part.n_particles, part.particle_prop = imc_source.crooked_pipe_body_particles(part.n_particles, part.particle_prop,
+                    part.n_particles, part.particle_prop = imc_source.RZ_body_particles_nrn(part.n_particles, part.particle_prop,
                                                                                                   part.Nx, part.Ny, part.Nmu, part.N_omega, part.Nt, 
                                                                                                   time.time, time.dt, 
                                                                                                   mesh.y_edges, mesh.x_edges, 
@@ -1166,78 +1168,83 @@ def si02_cylinder(output_file):
                 # Advance particles through transport
                 if part.mode == 'nrn': 
                     if parallel:
-                        # Track initial particles
-                        mesh.nrgdep, nrgscattered, x_Es, y_Es, tEs = imc_track.run_crooked_pipe_firstloop(
-                            part.n_particles, part.particle_prop,
-                            time.time, time.dt,
-                            mesh.sigma_a, mesh.sigma_s, mesh.sigma_t,
-                            mesh.fleck, mesh.x_edges, mesh.y_edges,
-                            mesh.z_min_bc, mesh.z_max_bc, mesh.r_max_bc
-                        )
-                        # This is our 0th iteration baseline
-                        original_nrg_scattered = np.copy(nrgscattered)
-
-                        initial_l2_norm = np.linalg.norm(original_nrg_scattered)
-                        
-                        iterations = 0
-                        max_iter = 10000  
-                        converged = False
-
-                        while not converged and iterations < max_iter:
-                            # Generate scattered particles
-                            scattered_particles, n_scattered_particles = imc_track.generate_scattered_particles_no_distribution(
-                                nrgscattered, x_Es, y_Es, tEs,
-                                mesh.x_edges, mesh.y_edges, mesh.dx, mesh.dy,
-                                part.max_array_size, part.Nx, part.Ny, part.Nt, part.Nmu, part.N_omega,
-                                time.time, time.dt
-                            )
-
-                            # Track scattered particles
-                            nrgdep_scat, nrgscattered, x_Es, y_Es, tEs = imc_track.run_crooked_pipe_firstloop(
-                                n_scattered_particles, scattered_particles,
-                                time.time, time.dt,
-                                mesh.sigma_a, mesh.sigma_s, mesh.sigma_t,
-                                mesh.fleck, mesh.x_edges, mesh.y_edges,
-                                mesh.z_min_bc, mesh.z_max_bc, mesh.r_max_bc
-                            )
-                            
-                            # Clean scattered particles array
-                            n_scattered_particles, scattered_particles = imc_track.clean2D(n_scattered_particles, scattered_particles, energy_col=int(8))
-
-                            current_l2_norm = np.linalg.norm(nrgscattered)
-                            relative_l2_error = current_l2_norm / initial_l2_norm
-
-                            if relative_l2_error < 0.01:
-                                converged = True
-
-                            # Add scattered particle deposition to the mesh
-                            mesh.nrgdep += nrgdep_scat
-
-                            # Copy scattered particles into global array
-                            n_existing_particles = part.n_particles
-                            n_total_particles = n_existing_particles + n_scattered_particles
-                            if n_total_particles > part.max_array_size:
-                                raise ValueError(f"Not enough space in global array at iteration {iterations}")
-
-                            part.particle_prop[n_existing_particles:n_total_particles, :] = scattered_particles[:n_scattered_particles, :]
-                            part.n_particles = n_total_particles
-                        
-                            iterations += 1
-
-                        # After converging, dump remaining scattered energy
-                        mesh.nrgdep += nrgscattered
-                        
-                        if converged:
-                            print(f'Converged in {iterations} iterations')
-                        else:
-                            print(f'Reached max_iter ({max_iter}).')
-                        # mesh.nrgdep = imc_track.run_crooked_pipe_loop_RN(
+                        # # # Track initial particles
+                        # mesh.nrgdep, nrgscattered, x_Es, y_Es, tEs = imc_track.run_crooked_pipe_firstloop(
                         #     part.n_particles, part.particle_prop,
                         #     time.time, time.dt,
-                        #     mesh.sigma_a, mesh.sigma_s, mesh.fleck,
-                        #     mesh.x_edges, mesh.y_edges,
+                        #     mesh.sigma_a, mesh.sigma_s, mesh.sigma_t,
+                        #     mesh.fleck, mesh.x_edges, mesh.y_edges,
                         #     mesh.z_min_bc, mesh.z_max_bc, mesh.r_max_bc
+                        # )
+
+                        # # Snapshot the 0th iteration deposition as the reference
+                        # initial_nrgscattered = np.copy(nrgscattered)
+                        # iterations = 0
+                        # max_iter = 10000
+                        # converged = False
+
+                        # while not converged and iterations < max_iter:
+                        #     # Generate scattered particles
+                        #     scattered_particles, n_scattered_particles = imc_track.generate_scattered_particles_no_distribution(
+                        #         nrgscattered, x_Es, y_Es, tEs,
+                        #         mesh.x_edges, mesh.y_edges, mesh.dx, mesh.dy,
+                        #         part.max_array_size, part.Nx, part.Ny, part.Nt, part.Nmu, part.N_omega,
+                        #         time.time, time.dt
                         #     )
+                        #     # Track scattered particles
+                        #     nrgdep_scat, nrgscattered, x_Es, y_Es, tEs = imc_track.run_crooked_pipe_firstloop(
+                        #         n_scattered_particles, scattered_particles,
+                        #         time.time, time.dt,
+                        #         mesh.sigma_a, mesh.sigma_s, mesh.sigma_t,
+                        #         mesh.fleck, mesh.x_edges, mesh.y_edges,
+                        #         mesh.z_min_bc, mesh.z_max_bc, mesh.r_max_bc
+                        #     )
+
+                        #     # Add scattered deposition before convergence check
+                        #     mesh.nrgdep += nrgdep_scat
+
+                        #     # Check if remaining scattered energy is < 1% of initial deposition in all cells
+                        #     # Use np.where to avoid divide-by-zero in cells with zero initial deposition
+                        #     significant_cells = initial_nrgscattered > 0
+                        #     if significant_cells.any():
+                        #         relative_error = np.where(
+                        #             significant_cells,
+                        #             nrgscattered / initial_nrgscattered,
+                        #             0.0
+                        #         )
+                        #         converged = np.all(relative_error < 0.01)
+                        #     else:
+                        #         converged = True
+
+                        #     # Clean scattered particles array
+                        #     n_scattered_particles, scattered_particles = imc_track.clean2D(
+                        #         n_scattered_particles, scattered_particles, energy_col=int(8)
+                        #     )
+
+                        #     # Copy scattered particles into global array
+                        #     n_existing_particles = part.n_particles
+                        #     n_total_particles = n_existing_particles + n_scattered_particles
+                        #     if n_total_particles > part.max_array_size:
+                        #         raise ValueError(f"Not enough space in global array at iteration {iterations}")
+                        #     part.particle_prop[n_existing_particles:n_total_particles, :] = scattered_particles[:n_scattered_particles, :]
+                        #     part.n_particles = n_total_particles
+
+                        #     iterations += 1
+
+                        # # Dump any remaining scattered energy after convergence
+                        # mesh.nrgdep += nrgscattered
+
+                        # if converged:
+                        #     print(f'Converged in {iterations} iterations')
+                        # else:
+                        #     print(f'Reached max_iter ({max_iter}).')
+                        mesh.nrgdep = imc_track.run_crooked_pipe_loop_RN(
+                            part.n_particles, part.particle_prop,
+                            time.time, time.dt,
+                            mesh.sigma_a, mesh.sigma_s, mesh.fleck,
+                            mesh.x_edges, mesh.y_edges,
+                            mesh.z_min_bc, mesh.z_max_bc, mesh.r_max_bc
+                            )
                 elif part.mode == 'rn':
                     if parallel:
                         mesh.nrgdep = imc_track.run_crooked_pipe_loop_RN(

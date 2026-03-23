@@ -48,6 +48,42 @@ def sample_mu_lambertian() -> float:
 # Deterministic Sampling Functions
 
 @njit
+def deterministic_sample_mu_boundary(n_samples: int) -> NDArray:
+    """
+    Samples mu between 0 and 1, explicitly including the 
+    boundaries 0.0 and 1.0.
+    """
+    if n_samples == 1:
+        return np.array([0.5]) # Fallback for single particle
+    
+    # Linearly spaced from 0 to 1
+    return np.linspace(-1.0, 1.0, n_samples)
+
+@njit
+def deterministic_sample_phi_boundary(n_samples: int) -> tuple[NDArray, NDArray]:
+    """
+    Sample phi deterministically, ensuring phi=0 is included to 
+    hit the r=0 axis directly.
+    """
+    if n_samples <= 1:
+        # Fallback: a single particle is always aimed at the axis
+        return np.array([0.0]), np.array([1.0])
+    
+    # 1. Create points starting exactly at 0.0
+    # We stop just before 2*pi because 2*pi == 0.0
+    phi_values = np.linspace(0.0, 2 * np.pi, n_samples + 1)[:-1]
+    
+    # 2. Weights for periodic sampling are uniform
+    # (Each point represents a 2*pi / n_samples slice)
+    weights = np.ones(n_samples)
+    
+    # Normalize weights so the mean is 1.0 (standard for your loop)
+    # Since they are all 1.0, mean is already 1.0, but this is safe:
+    weights = weights / np.mean(weights)
+    
+    return phi_values, weights
+
+@njit
 def deterministic_sample_radius(r_min: float,
                                 r_max: float,
                                 n_samples: int
@@ -70,20 +106,11 @@ def weighted_sample_radius(r_min: float,
     Uniformly sample R and return weights based on the 
     area-correction required for a cylindrical shell.
     """
-    # 1. Create uniformly spaced radii
-    # We use centered points to avoid sampling exactly at r_min or r_max
     dr = (r_max - r_min) / n_samples
     r_values = np.linspace(r_min + 0.5*dr, r_max - 0.5*dr, n_samples)
     
-    # 2. Calculate the weights
-    # The physical PDF proportional to 'r' needs to be normalized
-    # The weight is essentially (Physical Area of ring) / (Uniformly assumed area)
-    
-    # Pre-calculate denominator for the physical PDF normalization
     area_norm = r_max**2 - r_min**2
     
-    # Weight = (2 * r * dr) / (dr * (r_max + r_min)) effectively
-    # Simplified weight:
     weights = (2 * r_values * (r_max - r_min)) / area_norm
 
     weights = weights / np.mean(weights)
@@ -103,8 +130,22 @@ def deterministic_sample_z(z_min: float,
     return z_values
 
 @njit
-def deterministic_sample_mu_isotropic(n_samples) -> NDArray:
+def deterministic_sample_mu_isotropic(n_samples:int) -> NDArray:
     return -1.0 + ((np.arange(n_samples)) + 0.5) * 2 / n_samples
+
+
+def deterministic_sample_mu_isotropic_offset(n_samples: int, offset: float = 0.75) -> np.ndarray:
+    """
+    n_samples: Number of mu bins
+    offset: A value between 0 and 1. 
+            0.5 is the standard midpoint.
+            Values like 0.25 or 0.75 shift the points within the bins.
+    """
+    # Spacing remains 2 / n_samples
+    delta_mu = 2.0 / n_samples
+    # Start at -1.0, and move by (index + offset) steps of delta_mu
+    return -1.0 + (np.arange(n_samples) + offset) * delta_mu
+
 
 @njit
 def deterministic_sample_mu_lambertian(n_samples) -> NDArray:
@@ -112,6 +153,35 @@ def deterministic_sample_mu_lambertian(n_samples) -> NDArray:
     Produce n_samples of mu between 0 and 1 with a lambertian distribution
     """
     return np.sqrt(((np.arange(n_samples)) + 0.5) / n_samples)
+
+@njit
+def deterministic_sample_mu_lambertian_weighted(n_samples: int, offset: float = 0.5):
+    """
+    Produce n_samples of mu uniformly between 0 and 1, 
+    with corresponding weights for a Lambertian distribution.
+    """
+    # 1. Sample mu uniformly between 0 and 1
+    # Spacing is 1/n_samples
+    mu_vals = (np.arange(n_samples) + offset) / n_samples
+    
+    # 2. Lambertian weights are proportional to mu
+    # Weight(mu) = 2 * mu (normalized so the integral from 0 to 1 is 1)
+    weights = 2.0 * mu_vals
+    
+    return mu_vals, weights
+
+
+@njit
+def deterministic_sample_mu_lambertian_offset(n_samples: int, offset: float = 0.5) -> np.ndarray:
+    """
+    Produce n_samples of mu between 0 and 1 with a Lambertian distribution.
+    
+    n_samples: Number of samples.
+    offset: A value between 0 and 1 (0.5 is the standard center-of-bin).
+    """
+    # Create the uniform spacing in the CDF space [0, 1]
+    # Then map back to mu space using the inverse CDF (sqrt)
+    return np.sqrt((np.arange(n_samples) + offset) / n_samples)
 
 @njit
 def weighted_sample_mu_lambertian(n_samples: int) -> tuple[NDArray, NDArray]:
@@ -142,6 +212,18 @@ def deterministic_sample_phi_isotropic(n_samples) -> NDArray:
     return (0.0 + (np.arange(n_samples) + 0.5)) * 2 * np.pi / n_samples
 
 @njit
+def deterministic_sample_phi_isotropic_offset(n_samples: int, offset: float = 0.0) -> NDArray:
+    """
+    Generates n_samples of phi evenly spaced between 0 and 2pi, 
+    starting from a specific angular offset.
+    """
+    # Calculate the base mid-point samples
+    base_phi = (np.arange(n_samples) + 0.5) * (2 * np.pi / n_samples)
+    
+    # Apply offset and wrap around 2*pi
+    return (base_phi + offset) % (2 * np.pi)
+
+@njit
 def deterministic_sample_phi_tanh(n_samples, alpha) -> tuple[NDArray, NDArray]:
     """
     Sample angles non-uniformly using a tanh distribution to cluster
@@ -161,6 +243,44 @@ def deterministic_sample_phi_tanh(n_samples, alpha) -> tuple[NDArray, NDArray]:
     weights = weights / np.mean(weights)
     
     return phi_values, weights
+
+@njit
+def deterministic_sample_mu_tanh(n_samples, alpha) -> tuple[NDArray, NDArray]:
+    """
+    Sample mu non-uniformly using a tanh distribution to cluster
+    points near -1 and 1.
+    """
+    # 1. Create normalized index j in range [-1, 1]
+    i = np.arange(n_samples)
+    j_scaled = ((i + 0.5) / n_samples - 0.5) * 2
+    
+    # 2. Map to [-1, 1]
+    # np.tanh(alpha * j_scaled) / np.tanh(alpha) spans [-1, 1]
+    # This clusters points near the poles -1 and 1.
+    mu_values = np.tanh(alpha * j_scaled) / np.tanh(alpha)
+    
+    # 3. Calculate weights W(i)
+    # The weight is proportional to the inverse of the density (the derivative).
+    # d/dx [tanh(ax)/tanh(a)] = a * sech^2(ax) / tanh(a)
+    # Since we normalize by the mean anyway, we only need the sech^2 part.
+    weights = 1.0 / (np.cosh(alpha * j_scaled)**2)
+    weights = weights / np.mean(weights)
+    
+    return mu_values, weights
+
+@njit
+def deterministic_sample_mu_lobatto(n_samples: int) -> tuple[NDArray, NDArray]:
+    if n_samples == 1: return np.array([0.0]), np.array([1.0])
+    
+    # Include -1 and 1 explicitly
+    mu_values = np.linspace(-1.0, 1.0, n_samples)
+    
+    # Trapezoidal weights: Endpoints represent half the "width" of internal points
+    weights = np.ones(n_samples)
+    weights = weights / np.mean(weights) # Normalize mean to 1.0
+    
+    return mu_values, weights
+
 
 @njit
 def deterministic_sample_t_tanh_dist(n_samples, 
@@ -948,7 +1068,7 @@ def imc_get_energy_sources_2D(body_source, surface_source,
     e_surf = 0.0
     if surface_source:
         print(f'Surface at temp = {bcon.T0}')
-        surface_length = 0.08
+        surface_length = 0.04
         e_surf = phys.sb * bcon.T0 ** 4 * dt * (np.pi * surface_length**2)
 
     # Total energy emitted
@@ -1046,7 +1166,7 @@ def imc_source_particles2D(
             if n_particles >= max_particles:
                 raise RuntimeError("Maximum number of particles reached in surface source.")
             z = 1e-12
-            r = sample_radius(0.0, 0.08)
+            r = sample_radius(0.0, 0.04)
             # Cell indices
             z_idx = 0
             r_idx = np.searchsorted(mesh_r_edges, r) - 1
@@ -1124,11 +1244,11 @@ def crooked_pipe_surface_particles(T_surf, n_particles, particle_prop,
     print('Total energy emitted by the surface =', e_surf)
 
     # Generate radii
-    r_values, r_weights = weighted_sample_radius(0.0, surface_length, surface_Nr)
+    r_values, r_weights  = weighted_sample_radius(0.0+0.005, 0.005+surface_length, surface_Nr)
     # print(f'r_values = {r_values}')
 
     # Generate mu
-    mu_values, mu_weights = weighted_sample_mu_lambertian(surface_Nmu)
+    mu_values, mu_weights = deterministic_sample_mu_lambertian_weighted(surface_Nmu, offset=0.75)
     # print(f'mu_values = {mu_values}')
 
     # Generate Phi
@@ -1151,7 +1271,6 @@ def crooked_pipe_surface_particles(T_surf, n_particles, particle_prop,
 
     for i, r in enumerate(r_values):
         r_idx = np.searchsorted(mesh_r_edges, r) - 1 
-        # r_idx = int(r - mesh_r_edges[0])/ (mesh_r_edges[1]-mesh_r_edges[0])       
         for i_m, mu in enumerate(mu_values):
             for i_p,phi in enumerate(phi_values):
                 for ttt in t_values:
@@ -1173,11 +1292,11 @@ def crooked_pipe_surface_particles_rn(T_surf, n_particles, particle_prop,
                                    surface_N_phi, surface_Nt, 
                                    current_time, dt, mesh_r_edges):
     """Creates surface source particles for the boundary condition"""
-    surface_length = 0.04 # cm
+    surface_length = 0.04 + 0.005 # cm
     e_surf = phys.sb * T_surf ** 4 * dt * (np.pi * surface_length**2)
     print('Total energy emitted by the surface =', e_surf)
 
-    n_surface_particles = 1_000_000
+    n_surface_particles = 2_000_000
     nrg = e_surf / n_surface_particles
     for _ in range(n_surface_particles):
         z = 1e-12
@@ -1200,7 +1319,10 @@ def crooked_pipe_surface_particles_rn(T_surf, n_particles, particle_prop,
 
     return n_particles, particle_prop
 
-@njit
+
+
+
+
 def crooked_pipe_body_particles(n_particles, particle_prop, 
                                 part_Nx, part_Ny, part_Nmu, part_Nphi, part_Nt,
                                 current_time, dt, 
@@ -1233,15 +1355,15 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
             r_min = mesh_r_edges[ir]
             r_max = mesh_r_edges[ir+1]
             r_samples = part_Ny[iz, ir]
-            r_values, r_weights = weighted_sample_radius(r_min, r_max, r_samples)
+            r_values = deterministic_sample_radius(r_min, r_max, r_samples)
 
             # Generate mu
             mu_samples = part_Nmu[iz, ir]
-            mu_values = deterministic_sample_mu_isotropic(mu_samples)
+            mu_values, mu_weights = deterministic_sample_mu_tanh(mu_samples, alpha=4.0)
             
             # Generate phi
             phi_samples = part_Nphi[iz, ir]
-            phi_values = deterministic_sample_phi_isotropic(phi_samples)
+            phi_values, phi_weights = deterministic_sample_phi_tanh(phi_samples, alpha=4.0)
             
             # Generate t
             t_samples = part_Nt[iz, ir]
@@ -1267,11 +1389,11 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
             # Loop to create particles
             for z in z_values:
                 for i_r, r in enumerate(r_values):
-                    for mu in mu_values:
-                        for phi in phi_values:
+                    for i_m, mu in enumerate(mu_values):
+                        for i_p,phi in enumerate(phi_values):
                             for i_t, ttt in enumerate(t_values):
                                 if n_particles < part.max_array_size:
-                                    weighted_nrg = base_nrg * r_weights[i_r]
+                                    weighted_nrg = base_nrg * phi_weights[i_p] * mu_weights[i_m]
                                     # Assign: [emission_time, z_idx, r_idx, z, r, mu, phi, frq, nrg, startnrg]
                                     particle_prop[n_particles] = [ttt, iz, ir, z, r, mu, phi, 0, weighted_nrg, weighted_nrg]
                                     n_particles += 1
@@ -1286,6 +1408,221 @@ def crooked_pipe_body_particles(n_particles, particle_prop,
     
     return n_particles, particle_prop
 
+
+def RZ_body_particles_rn(n_particles, particle_prop, 
+                         part_Nx, part_Ny, part_Nmu, part_Nphi, part_Nt,
+                         current_time, dt, 
+                         mesh_r_edges, mesh_z_edges, 
+                         mesh_temp, mesh_fleck, 
+                         mesh_sigma_a):
+    
+    nz_cells = len(mesh_z_edges) - 1
+    nr_cells = len(mesh_r_edges) - 1
+    
+    # Pre-calculate RZ volumes: V = pi * (r_out^2 - r_in^2) * dz
+    dz = np.diff(mesh_z_edges)
+    dr2 = np.diff(mesh_r_edges**2)
+    volumes = np.pi * np.outer(dz, dr2)
+    
+    start_count = n_particles
+    
+    for iz in range(nz_cells):
+        for ir in range(nr_cells):
+            # Skip cold cells to save performance
+            if mesh_temp[iz, ir] <= 2.59E-5:
+                continue
+
+            # Calculate total particles for this specific cell
+            n_cell_ptcls = (part_Nx[iz, ir] * part_Ny[iz, ir] * part_Nmu[iz, ir] * part_Nphi[iz, ir] * part_Nt[iz, ir])
+            
+            if n_cell_ptcls <= 0:
+                continue
+
+            # Total energy emitted by the cell
+            e_cell = (mesh_fleck[iz, ir] * mesh_sigma_a[iz, ir] * phys.a * phys.c * mesh_temp[iz, ir]**4 * volumes[iz, ir] * dt)
+            
+            # Every particle gets an equal share of the cell energy
+            # because the random sampling handles the spatial/angular distribution
+            base_nrg = e_cell / n_cell_ptcls
+
+            for _ in range(int(n_cell_ptcls)):
+                if n_particles >= part.max_array_size:
+                    print("Warning: Maximum number of particles reached!")
+                    # Break the inner loops and return what we have
+                    return n_particles, particle_prop
+
+                # 1. Random Spatial Sampling
+                z = sample_z(mesh_z_edges[iz], mesh_z_edges[iz+1])
+                r = sample_radius(mesh_r_edges[ir], mesh_r_edges[ir+1])
+                
+                # 2. Random Time Sampling
+                ttt = sample_z(current_time, current_time + dt)
+                
+                # 3. Random Angular Sampling
+                mu = sample_mu_isotropic()
+                phi = sample_phi_isotropic()
+                
+                # 4. Energy and Frequency
+                frq = 0.0 # Assuming gray/frequency-integrated for now
+                
+                # Assign to properties array
+                # Format: [time, z_idx, r_idx, z, r, mu, phi, freq, nrg, start_nrg]
+                particle_prop[n_particles] = [
+                    ttt, float(iz), float(ir), z, r, mu, phi, frq, base_nrg, base_nrg
+                ]
+                n_particles += 1
+
+    # Consistency Check
+    actual_sum = np.sum(particle_prop[start_count:n_particles, 8])
+    theoretical_sum = np.sum(mesh_fleck * mesh_sigma_a * phys.a * phys.c * mesh_temp**4 * volumes * dt)
+    
+    print(f"Added {n_particles - start_count} body-source particles.")    
+    print(f"Sum of generated particles energies = {actual_sum:.6e}")
+    print(f"Total energy emitted by body-source   = {theoretical_sum:.6e}")
+    
+    return n_particles, particle_prop
+
+
+def RZ_body_particles_nrn(n_particles, particle_prop, 
+                          part_Nx, part_Ny, part_Nmu, part_Nphi, part_Nt,
+                          current_time, dt, 
+                          mesh_r_edges, mesh_z_edges, 
+                          mesh_temp, mesh_fleck, 
+                          mesh_sigma_a):
+    
+    nz_cells = len(mesh_z_edges) - 1
+    nr_cells = len(mesh_r_edges) - 1
+    
+    # Pre-calculate RZ volumes: V = pi * (r_out^2 - r_in^2) * dz
+    dz = np.diff(mesh_z_edges)
+    dr2 = np.diff(mesh_r_edges**2)
+    volumes = np.pi * np.outer(dz, dr2)
+    
+    start_count = n_particles
+    
+    for iz in range(nz_cells):
+        for ir in range(nr_cells):
+            if mesh_temp[iz, ir] <= 2.59E-5:
+                continue
+
+            # 1. Total energy emitted by this cell
+            zone_volume = volumes[iz, ir]
+            e_cell = (mesh_fleck[iz, ir] * mesh_sigma_a[iz, ir] * phys.a * phys.c * mesh_temp[iz, ir]**4 * zone_volume * dt)
+
+            # 2. Get deterministic samples and weights for each dimension
+            r_vals, r_weights = weighted_sample_radius(mesh_r_edges[ir], mesh_r_edges[ir+1], part_Ny[iz, ir])
+            
+            # Spatial Z (Uniform spacing)
+            z_vals = deterministic_sample_z(mesh_z_edges[iz], mesh_z_edges[iz+1], part_Nx[iz, ir])
+            
+            mu_vals = deterministic_sample_mu_isotropic(part_Nmu[iz,ir])
+            phi_vals = deterministic_sample_phi_isotropic(part_Nphi[iz, ir])
+            # print(f'mu_vals = {mu_vals}')
+            # print(f'phi_vals = {phi_vals}')
+            # Time (Uniform or Tanh)
+            t_vals = deterministic_sample_z(current_time, current_time + dt, part_Nt[iz, ir])
+
+            # Total particles in this cell
+            n_cell_ptcls = len(r_vals) * len(z_vals) * len(mu_vals) * len(phi_vals) * len(t_vals)
+            if n_cell_ptcls == 0: continue
+            
+            # Base energy per particle
+            base_nrg = e_cell / n_cell_ptcls
+
+            # 3. Nested loops to "tile" the phase space
+            for z in z_vals:
+                for i_r, r in enumerate(r_vals):
+                    for i_m, mu in enumerate(mu_vals):
+                        for i_p, phi in enumerate(phi_vals):
+                            for ttt in t_vals:
+                                if n_particles >= part.max_array_size:
+                                    print("Warning: Max particle size reached.")
+                                    return n_particles, particle_prop
+                                weighted_nrg = base_nrg * r_weights[i_r]
+                                particle_prop[n_particles] = [
+                                    ttt, float(iz), float(ir), z, r, mu, phi, 0.0, weighted_nrg, weighted_nrg
+                                ]
+                                n_particles += 1
+
+    # Print diagnostics
+    actual_sum = np.sum(particle_prop[start_count:n_particles, 8])
+    theoretical_sum = np.sum(mesh_fleck * mesh_sigma_a * phys.a * phys.c * mesh_temp**4 * volumes * dt)
+    print(f"Added {n_particles - start_count} deterministic particles.")
+    print(f"Energy Actual: {actual_sum:.6e} | Theoretical: {theoretical_sum:.6e}")
+    
+    return n_particles, particle_prop
+
+
+def RZ_body_particles_nrn_angles_rn(n_particles, particle_prop, 
+                          part_Nx, part_Ny, part_Nmu, part_Nphi, part_Nt,
+                          current_time, dt, 
+                          mesh_r_edges, mesh_z_edges, 
+                          mesh_temp, mesh_fleck, 
+                          mesh_sigma_a):
+    
+    nz_cells = len(mesh_z_edges) - 1
+    nr_cells = len(mesh_r_edges) - 1
+    
+    # Pre-calculate RZ volumes: V = pi * (r_out^2 - r_in^2) * dz
+    dz = np.diff(mesh_z_edges)
+    dr2 = np.diff(mesh_r_edges**2)
+    volumes = np.pi * np.outer(dz, dr2)
+    
+    start_count = n_particles
+    
+    for iz in range(nz_cells):
+        for ir in range(nr_cells):
+            if mesh_temp[iz, ir] <= 2.59E-5:
+                continue
+
+            # 1. Total energy emitted by this cell
+            zone_volume = volumes[iz, ir]
+            e_cell = (mesh_fleck[iz, ir] * mesh_sigma_a[iz, ir] * phys.a * phys.c * mesh_temp[iz, ir]**4 * zone_volume * dt)
+
+            # 2. Spatial/Temporal Deterministic Samples
+            r_vals, r_weights = weighted_sample_radius(mesh_r_edges[ir], mesh_r_edges[ir+1], part_Ny[iz, ir])
+            z_vals = deterministic_sample_z(mesh_z_edges[iz], mesh_z_edges[iz+1], part_Nx[iz, ir])
+            t_vals = deterministic_sample_z(current_time, current_time + dt, part_Nt[iz, ir])
+
+            # Total particles in this cell (Using Nmu/Nphi from your grid as multipliers)
+            # This ensures the energy is divided correctly among the random samples
+            n_mu = int(part_Nmu[iz, ir])
+            n_phi = int(part_Nphi[iz, ir])
+            n_cell_ptcls = len(r_vals) * len(z_vals) * len(t_vals) * n_mu * n_phi
+            
+            if n_cell_ptcls == 0: continue
+            
+            # Base energy per particle
+            base_nrg = e_cell / n_cell_ptcls
+
+            # 3. Nested loops for Space/Time
+            for z in z_vals:
+                for i_r, r in enumerate(r_vals):
+                    for ttt in t_vals:
+                        # For every space-time point, we generate Nmu * Nphi random angle pairs
+                        for _ in range(n_mu * n_phi):
+                            if n_particles >= particle_prop.shape[0]: # Use .shape[0] for safety
+                                print("Warning: Max particle size reached.")
+                                return n_particles, particle_prop
+                            
+                            # Randomly sample the angles
+                            mu = sample_mu_isotropic()   # Typically np.random.uniform(-1, 1)
+                            phi = sample_phi_isotropic() # Typically np.random.uniform(0, 2*np.pi)
+                            
+                            weighted_nrg = base_nrg * r_weights[i_r]
+                            
+                            particle_prop[n_particles] = [
+                                ttt, float(iz), float(ir), z, r, mu, phi, 0.0, weighted_nrg, weighted_nrg
+                            ]
+                            n_particles += 1
+
+    # Print diagnostics
+    actual_sum = np.sum(particle_prop[start_count:n_particles, 8])
+    theoretical_sum = np.sum(mesh_fleck * mesh_sigma_a * phys.a * phys.c * mesh_temp**4 * volumes * dt)
+    print(f"Added {n_particles - start_count} particles (Deterministic Space/Time, Random Angles).")
+    print(f"Energy Actual: {actual_sum:.6e} | Theoretical: {theoretical_sum:.6e}")
+    
+    return n_particles, particle_prop
 
 def RZ_volume_source_DPT(n_particles, particle_prop,
                          part_Nx, part_Ny, part_Nmu, part_Nphi, part_Nt,
