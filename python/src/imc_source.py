@@ -1166,7 +1166,7 @@ def imc_source_particles2D(
             if n_particles >= max_particles:
                 raise RuntimeError("Maximum number of particles reached in surface source.")
             z = 1e-12
-            r = sample_radius(0.0, 0.04)
+            r = sample_radius(0.0+0.005, 0.04+0.005)
             # Cell indices
             z_idx = 0
             r_idx = np.searchsorted(mesh_r_edges, r) - 1

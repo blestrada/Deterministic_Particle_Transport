@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 # Load IMC data
-with np.load("si02_results_half_IMC_2e6_0.1sh.npz") as data:
+with np.load("si02_results_half_IMC_0.125sh.npz") as data:
     time = data['time']
     temp = data['temp'] # Assuming shape is (time, z_idx, r_idx)
     radtemp = data['radtemp']

@@ -14,7 +14,7 @@ surface_nr      80
 surface_nmu     40
 surface_nphi    40
 surface_nt      40
-n_max           30_000_000
+n_max           100_000_000
 mode            nrn
 scattering      implicit
 n_threads       12

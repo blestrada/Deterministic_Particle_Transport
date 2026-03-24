@@ -1098,6 +1098,7 @@ def si02_cylinder(output_file):
         part.Nt = np.full((num_x_idx, num_y_idx), part.Nt)
 
     # Columns: [emission_time, x_idx, y_idx, xpos, ypos, mu, omega, frq, nrg, startnrg]
+    print(f'part.max_array_size = {part.max_array_size}')
     part.particle_prop = np.zeros((part.max_array_size, 10), dtype=np.float64)
     part.n_particles = 0
 
@@ -1105,7 +1106,7 @@ def si02_cylinder(output_file):
     time.time = 0.0
     time.dt = 1.0e-6    # shakes
     time.dt_max = 1.0e-4  # shakes
-    t_final = 0.1
+    t_final = 0.125
     time.dt_rampfactor = 1.05
 
     bcon.T0 = 0.15 # keV
